@@ -29,11 +29,12 @@ def cli():
 def ingest(config_path: str, dry_run: bool, force: bool):
     """Ingest transcripts from configured YouTube channels."""
     from lucas_v2.config import load_channels
-    from lucas_v2.db import connect, init_schema, upsert_channel, upsert_video, replace_chunks, video_exists
+    from lucas_v2.db import connect, upsert_channel, upsert_video, replace_chunks, video_exists
+    from lucas_v2.schema import init_schema
     from lucas_v2.youtube_api import resolve_channel_id, list_videos
     from lucas_v2.subs import RateLimitedError, download_srt
     from lucas_v2.srt import parse_srt
-    from lucas_v2.chunking import chunk_cues
+    from lucas_v2.chunking import chunk_cues, get_tokenizer, MAX_CONTENT_TOKENS
 
     config_file = Path(config_path)
     if not config_file.exists():
@@ -45,6 +46,9 @@ def ingest(config_path: str, dry_run: bool, force: bool):
 
     conn = connect()
     init_schema(conn)
+    tok = get_tokenizer()
+    tok_name = "MiniLM" if tok is not None else "whitespace"
+    click.echo(f"Tokenizer: {tok_name} (max={MAX_CONTENT_TOKENS})")
 
     for spec in channels:
         click.echo(f"\n--- {spec.url} ---")
@@ -72,7 +76,7 @@ def ingest(config_path: str, dry_run: bool, force: bool):
             if i > 0 and not dry_run:
                 time.sleep(INTER_VIDEO_DELAY_S)
 
-            if not force and video_exists(conn, vid_id):
+            if not force and video_exists(conn, vid_url):
                 click.echo("     Déjà scrapée, skip (utiliser --force pour re-scraper).")
                 continue
 
@@ -88,22 +92,22 @@ def ingest(config_path: str, dry_run: bool, force: bool):
                 continue
             except Exception as e:
                 click.echo(f"     ERREUR téléchargement subs : {e}", err=True)
-                upsert_video(conn, vid_id, channel_row_id, spec.url, vid_url, vid.get("title"),
+                upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
                              vid.get("upload_date"), vid.get("duration_s"), None, None, "error", str(e))
                 continue
 
             if srt_text is None:
                 click.echo("     Aucun sous-titre FR trouvé.")
-                upsert_video(conn, vid_id, channel_row_id, spec.url, vid_url, vid.get("title"),
+                upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
                              vid.get("upload_date"), vid.get("duration_s"), None, None, "no_subs", None)
                 continue
 
             cues = parse_srt(srt_text)
-            chunks = chunk_cues(cues)
+            chunks = chunk_cues(cues, tokenizer=tok)
             click.echo(f"     {len(cues)} cues → {len(chunks)} chunks ({sub_kind})")
 
-            upsert_video(conn, vid_id, channel_row_id, spec.url, vid_url, vid.get("title"),
-                         vid.get("upload_date"), vid.get("duration_s"), sub_lang, sub_kind, "ok", None)
-            replace_chunks(conn, vid_id, chunks)
+            video_row_id = upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
+                                        vid.get("upload_date"), vid.get("duration_s"), sub_lang, sub_kind, "ok", None)
+            replace_chunks(conn, video_row_id, chunks)
 
     click.echo("\nTerminé.")
