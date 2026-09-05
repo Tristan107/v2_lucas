@@ -1,0 +1,10 @@
+defaults:
+  max_videos: 1
+  since_days: null
+  lang: fr
+channels:
+  - url: https://www.youtube.com/@NomChaine1
+  - url: https://www.youtube.com/@NomChaine2
+    max_videos: 3
+  - url: https://www.youtube.com/@NomChaine3
+    since_days: 30

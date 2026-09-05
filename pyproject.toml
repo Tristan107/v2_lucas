@@ -9,8 +9,13 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.5.0",
+    "google-api-python-client>=2.200.0",
+    "libsql-experimental>=0.0.55",
     "pandas>=3.0.5",
+    "python-dotenv>=1.2.3",
+    "pyyaml>=6.0.3",
     "requests>=2.34.2",
+    "yt-dlp>=2026.8.19",
 ]
 
 [project.scripts]
@@ -19,3 +24,8 @@ lucas-v2 = "lucas_v2:main"
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

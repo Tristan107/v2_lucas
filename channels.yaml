@@ -1,0 +1,7 @@
+defaults:
+  max_videos: 1
+  since_days: null
+  lang: fr
+channels:
+  - url: https://www.youtube.com/@JLMelenchon
+    max_videos: 1 
