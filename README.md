@@ -82,6 +82,25 @@ uv run lucas-v2 --help
 uv run lucas-v2 ingest --help
 ```
 
+## Exemple de recherche plein-texte
+
+```sql
+SELECT tc.seq_no, tc.start_s, tc.end_s,
+       snippet(transcript_chunk_fts, 0, '<b>', '</b>', '…', 12) AS extrait,
+       tc."text",
+       bm25(transcript_chunk_fts) AS rank,
+       v.video_url || '&t=' || tc.start_s AS video_link, v.title
+FROM transcript_chunk_fts
+JOIN transcript_chunk tc ON tc.id = transcript_chunk_fts.rowid
+JOIN video v ON v.id = tc.fk_video_id
+WHERE transcript_chunk_fts MATCH 'boulot*'
+ORDER BY rank
+LIMIT 20;
+```
+
+Le lien `video_link` produit une URL directe vers le début du chunk
+(ex. `https://www.youtube.com/watch?v=abc123&t=95`).
+
 ## Tests
 
 ```bash

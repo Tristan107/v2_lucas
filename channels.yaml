@@ -4,4 +4,4 @@ defaults:
   lang: fr
 channels:
   - url: https://www.youtube.com/@JLMelenchon
-    max_videos: 1 
+    max_videos: 10 
