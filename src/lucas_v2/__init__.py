@@ -76,7 +76,8 @@ def ingest(config_path: str, dry_run: bool, force: bool):
             if i > 0 and not dry_run:
                 time.sleep(INTER_VIDEO_DELAY_S)
 
-            if not force and video_exists(conn, vid_url):
+            is_new = not video_exists(conn, vid_url)
+            if not force and not is_new:
                 click.echo("     Déjà scrapée, skip (utiliser --force pour re-scraper).")
                 continue
 
@@ -94,12 +95,14 @@ def ingest(config_path: str, dry_run: bool, force: bool):
                 click.echo(f"     ERREUR téléchargement subs : {e}", err=True)
                 upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
                              vid.get("upload_date"), vid.get("duration_s"), None, None, "error", str(e))
+                conn.commit()
                 continue
 
             if srt_text is None:
                 click.echo("     Aucun sous-titre FR trouvé.")
                 upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
                              vid.get("upload_date"), vid.get("duration_s"), None, None, "no_subs", None)
+                conn.commit()
                 continue
 
             cues = parse_srt(srt_text)
@@ -108,6 +111,7 @@ def ingest(config_path: str, dry_run: bool, force: bool):
 
             video_row_id = upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
                                         vid.get("upload_date"), vid.get("duration_s"), sub_lang, sub_kind, "ok", None)
-            replace_chunks(conn, video_row_id, chunks)
+            replace_chunks(conn, video_row_id, chunks, delete_existing=not is_new)
+            conn.commit()
 
     click.echo("\nTerminé.")

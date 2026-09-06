@@ -52,34 +52,51 @@ def upsert_video(conn, fk_channel_id: int | None,
                  video_url: str, title: str | None, upload_date: str | None,
                  duration_s: int | None, sub_lang: str | None, sub_kind: str | None,
                  status: str, error: str | None) -> int:
-    """Upsert video par video_url, retourne l'id local (video.id) pour la FK transcript_chunk."""
-    conn.execute(
+    """Upsert video par video_url, retourne l'id local (video.id) pour la FK transcript_chunk.
+
+    Ne commit PAS : l'appelant doit appeler conn.commit() après avoir inséré les chunks.
+    """
+    cur = conn.execute(
         "INSERT INTO video (fk_channel_id, video_url, title, "
         "upload_date, duration_s, sub_lang, sub_kind, status, error) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(video_url) DO UPDATE SET "
         "fk_channel_id=excluded.fk_channel_id, title=excluded.title, upload_date=excluded.upload_date, "
         "duration_s=excluded.duration_s, sub_lang=excluded.sub_lang, sub_kind=excluded.sub_kind, "
-        "status=excluded.status, error=excluded.error, scraped_at=datetime('now')",
+        "status=excluded.status, error=excluded.error, scraped_at=datetime('now') "
+        "RETURNING id",
         (fk_channel_id, video_url, title, upload_date,
          duration_s, sub_lang, sub_kind, status, error),
     )
-    conn.commit()
-    row = conn.execute(
-        "SELECT id FROM video WHERE video_url=?", (video_url,)
-    ).fetchone()
-    return row[0]
+    return cur.fetchone()[0]
 
 
-def replace_chunks(conn, fk_video_id: int, chunks):
-    conn.execute("DELETE FROM transcript_chunk WHERE fk_video_id=?", (fk_video_id,))
-    for ch in chunks:
-        conn.execute(
-            "INSERT INTO transcript_chunk (fk_video_id, seq_no, start_s, end_s, text, tokens) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (fk_video_id, ch.seq_no, ch.start_s, ch.end_s, ch.text, ch.tokens),
+_CHUNK_BATCH = 500  # rows per INSERT statement (sécurité, pas de limite SQLite stricte ici)
+
+
+def replace_chunks(conn, fk_video_id: int, chunks, *, delete_existing: bool = True):
+    """Insère les chunks en bulk multi-VALUES (1 seul SQL par batch) pour minimiser
+    les writes Turso et les round-trips HTTP.
+
+    delete_existing=True : DELETE ancien chunks + réinsert (re-srape).
+    delete_existing=False : insert direct (vidéo nouvelle, pas de DELETE inutile).
+    """
+    if delete_existing:
+        conn.execute("DELETE FROM transcript_chunk WHERE fk_video_id=?", (fk_video_id,))
+    n = len(chunks)
+    if n == 0:
+        return
+    cols = "fk_video_id, seq_no, start_s, end_s, text, tokens"
+    placeholder = "(?, ?, ?, ?, ?, ?)"
+    for start in range(0, n, _CHUNK_BATCH):
+        batch = chunks[start : start + _CHUNK_BATCH]
+        placeholders = ",".join([placeholder] * len(batch))
+        flat = tuple(
+            v
+            for ch in batch
+            for v in (fk_video_id, ch.seq_no, ch.start_s, ch.end_s, ch.text, ch.tokens)
         )
-    conn.commit()
+        conn.execute(f"INSERT INTO transcript_chunk ({cols}) VALUES {placeholders}", flat)
 
 
 def video_exists_ok(conn, video_url: str) -> bool:

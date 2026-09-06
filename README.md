@@ -122,3 +122,15 @@ tests/test_srt_chunk.py
 ```
 
 Plan détaillé : `.opencode/plans/yt-dlp-transcripts-turso.md`
+
+Biggest channel (Mélenchon) :
+
+2007 regular videos
+156 shorts
+1110.2 hours of regular video content
+
+Turso limits :
+
+Metric	Max Capacity in Turso Free Tier
+Total Transcript Time	~138,500,000 seconds (~38,470 hours)
+Total Videos	~125,000 videos
