@@ -81,7 +81,7 @@ def list_videos(channel_id: str, max_videos: int = 1,
                 since_days: int | None = None) -> list[dict]:
     """List videos from a channel's uploads playlist.
 
-    Returns list of dicts: {video_id, title, upload_date, duration_s, video_url, published_at}.
+    Returns list of dicts: {video_id, title, upload_date, duration_s, youtube_str_id, published_at}.
     """
     youtube = _get_client()
 
@@ -165,7 +165,7 @@ def list_videos(channel_id: str, max_videos: int = 1,
                 "title": v.get("snippet", {}).get("title", ""),
                 "upload_date": _iso_to_yyyymmdd(video_meta.get(vid_id, {}).get("published_at", "")),
                 "duration_s": duration_s,
-                "video_url": f"https://www.youtube.com/watch?v={vid_id}",
+                "youtube_str_id": vid_id,
                 "published_at": video_meta.get(vid_id, {}).get("published_at", ""),
             })
 

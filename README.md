@@ -89,7 +89,7 @@ SELECT tc.seq_no, tc.start_s, tc.end_s,
        snippet(transcript_chunk_fts, 0, '<b>', '</b>', '…', 12) AS extrait,
        tc."text",
        bm25(transcript_chunk_fts) AS rank,
-       v.video_url || '&t=' || tc.start_s AS video_link, v.title
+       'https://www.youtube.com/watch?v=' || v.youtube_str_id || '&t=' || tc.start_s AS video_link, v.title
 FROM transcript_chunk_fts
 JOIN transcript_chunk tc ON tc.id = transcript_chunk_fts.rowid
 JOIN video v ON v.id = tc.fk_video_id

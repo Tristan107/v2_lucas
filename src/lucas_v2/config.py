@@ -10,6 +10,7 @@ class ChannelSpec:
     max_videos: int
     since_days: int | None
     lang: str
+    owner: str | None = None
 
 
 def load_channels(path: str) -> list[ChannelSpec]:
@@ -20,6 +21,7 @@ def load_channels(path: str) -> list[ChannelSpec]:
     d_max_videos = defaults.get("max_videos", 1)
     d_since_days = defaults.get("since_days")
     d_lang = defaults.get("lang", "fr")
+    d_owner = defaults.get("owner")
 
     channels = []
     for ch in data.get("channels", []):
@@ -31,5 +33,6 @@ def load_channels(path: str) -> list[ChannelSpec]:
             max_videos=ch.get("max_videos", d_max_videos),
             since_days=ch.get("since_days", d_since_days),
             lang=ch.get("lang", d_lang),
+            owner=ch.get("owner", d_owner),
         ))
     return channels

@@ -1,4 +1,4 @@
-_TABLES = """
+_SCHEMA_SCRIPT = """
 CREATE TABLE IF NOT EXISTS channel (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel_url TEXT NOT NULL UNIQUE,
@@ -10,12 +10,13 @@ CREATE TABLE IF NOT EXISTS channel (
 CREATE TABLE IF NOT EXISTS video (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   fk_channel_id INTEGER,
-  video_url TEXT NOT NULL UNIQUE,
+  youtube_str_id TEXT NOT NULL UNIQUE,
   title TEXT,
   upload_date TEXT,
   duration_s INTEGER,
   sub_lang TEXT,
   sub_kind TEXT,
+  owner TEXT,
   status TEXT DEFAULT 'ok',
   error TEXT,
   scraped_at TEXT DEFAULT (datetime('now')),
@@ -32,33 +33,30 @@ CREATE TABLE IF NOT EXISTS transcript_chunk (
   tokens INTEGER NOT NULL,
   UNIQUE(fk_video_id, seq_no)
 );
-"""
 
-_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_video_fk_channel ON video(fk_channel_id);
 CREATE INDEX IF NOT EXISTS idx_channel_ytid ON channel(channel_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS transcript_chunk_fts USING fts5(
+  text,
+  content='transcript_chunk',
+  content_rowid='id',
+  tokenize="unicode61 remove_diacritics 2"
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_chunk_fts_ai AFTER INSERT ON transcript_chunk BEGIN
+  INSERT INTO transcript_chunk_fts(rowid, text) VALUES (new.id, new.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_chunk_fts_ad AFTER DELETE ON transcript_chunk BEGIN
+  INSERT INTO transcript_chunk_fts(transcript_chunk_fts, rowid, text) VALUES ('delete', old.id, old.text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_chunk_fts_au AFTER UPDATE ON transcript_chunk BEGIN
+  INSERT INTO transcript_chunk_fts(transcript_chunk_fts, rowid, text) VALUES ('delete', old.id, old.text);
+  INSERT INTO transcript_chunk_fts(rowid, text) VALUES (new.id, new.text);
+END;
 """
-
-_FTS_STMTS = [
-    """CREATE VIRTUAL TABLE IF NOT EXISTS transcript_chunk_fts USING fts5(
-      text,
-      content='transcript_chunk',
-      content_rowid='id',
-      tokenize="unicode61 remove_diacritics 2"
-    )""",
-    """CREATE TRIGGER IF NOT EXISTS trg_chunk_fts_ai AFTER INSERT ON transcript_chunk BEGIN
-      INSERT INTO transcript_chunk_fts(rowid, text) VALUES (new.id, new.text);
-    END""",
-    """CREATE TRIGGER IF NOT EXISTS trg_chunk_fts_ad AFTER DELETE ON transcript_chunk BEGIN
-      INSERT INTO transcript_chunk_fts(transcript_chunk_fts, rowid, text) VALUES ('delete', old.id, old.text);
-    END""",
-    """CREATE TRIGGER IF NOT EXISTS trg_chunk_fts_au AFTER UPDATE ON transcript_chunk BEGIN
-      INSERT INTO transcript_chunk_fts(transcript_chunk_fts, rowid, text) VALUES ('delete', old.id, old.text);
-      INSERT INTO transcript_chunk_fts(rowid, text) VALUES (new.id, new.text);
-    END""",
-]
-
-_SCHEMA = _TABLES + _INDEXES
 
 
 def init_schema(conn):
@@ -66,14 +64,5 @@ def init_schema(conn):
         conn.execute("PRAGMA foreign_keys=ON;")
     except Exception:
         pass
-    for stmt in _TABLES.strip().split(";"):
-        stmt = stmt.strip()
-        if stmt:
-            conn.execute(stmt + ";")
-    for stmt in _INDEXES.strip().split(";"):
-        stmt = stmt.strip()
-        if stmt and not stmt.startswith("--"):
-            conn.execute(stmt + ";")
-    for stmt in _FTS_STMTS:
-        conn.execute(stmt + ";")
+    conn.executescript(_SCHEMA_SCRIPT)
     conn.commit()

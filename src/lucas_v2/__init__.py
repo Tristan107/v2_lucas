@@ -70,13 +70,13 @@ def ingest(config_path: str, dry_run: bool, force: bool):
 
         for i, vid in enumerate(videos):
             vid_id = vid["video_id"]
-            vid_url = vid["video_url"]
+            vid_yt_id = vid["youtube_str_id"]
             click.echo(f"\n  >> {vid['title']} ({vid_id})")
 
             if i > 0 and not dry_run:
                 time.sleep(INTER_VIDEO_DELAY_S)
 
-            is_new = not video_exists(conn, vid_url)
+            is_new = not video_exists(conn, vid_yt_id)
             if not force and not is_new:
                 click.echo("     Déjà scrapée, skip (utiliser --force pour re-scraper).")
                 continue
@@ -86,22 +86,22 @@ def ingest(config_path: str, dry_run: bool, force: bool):
                 continue
 
             try:
-                srt_text, sub_lang, sub_kind, meta = download_srt(vid_url)
+                srt_text, sub_lang, sub_kind, meta = download_srt(vid_yt_id)
             except RateLimitedError as e:
                 # Transitoire (429) : on n'insère RIEN → retry naturel au prochain run.
                 click.echo(f"     RATE-LIMIT, vidéo skippée sans insertion : {e}", err=True)
                 continue
             except Exception as e:
                 click.echo(f"     ERREUR téléchargement subs : {e}", err=True)
-                upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
-                             vid.get("upload_date"), vid.get("duration_s"), None, None, "error", str(e))
+                upsert_video(conn, channel_row_id, vid_yt_id, vid.get("title"),
+                             vid.get("upload_date"), vid.get("duration_s"), None, None, spec.owner, "error", str(e))
                 conn.commit()
                 continue
 
             if srt_text is None:
                 click.echo("     Aucun sous-titre FR trouvé.")
-                upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
-                             vid.get("upload_date"), vid.get("duration_s"), None, None, "no_subs", None)
+                upsert_video(conn, channel_row_id, vid_yt_id, vid.get("title"),
+                             vid.get("upload_date"), vid.get("duration_s"), None, None, spec.owner, "no_subs", None)
                 conn.commit()
                 continue
 
@@ -109,8 +109,8 @@ def ingest(config_path: str, dry_run: bool, force: bool):
             chunks = chunk_cues(cues, tokenizer=tok)
             click.echo(f"     {len(cues)} cues → {len(chunks)} chunks ({sub_kind})")
 
-            video_row_id = upsert_video(conn, channel_row_id, vid_url, vid.get("title"),
-                                        vid.get("upload_date"), vid.get("duration_s"), sub_lang, sub_kind, "ok", None)
+            video_row_id = upsert_video(conn, channel_row_id, vid_yt_id, vid.get("title"),
+                                        vid.get("upload_date"), vid.get("duration_s"), sub_lang, sub_kind, spec.owner, "ok", None)
             replace_chunks(conn, video_row_id, chunks, delete_existing=not is_new)
             conn.commit()
 

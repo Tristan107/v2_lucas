@@ -16,7 +16,7 @@ class RateLimitedError(Exception):
 _SLEEP_SUBTITLES_S = 5
 
 
-def download_srt(video_url: str) -> tuple[str | None, str | None, str | None, dict]:
+def download_srt(youtube_str_id: str) -> tuple[str | None, str | None, str | None, dict]:
     """Download SRT subtitles for a video (1 seule requête timedtext).
 
     Stratégie anti-429 :
@@ -29,6 +29,7 @@ def download_srt(video_url: str) -> tuple[str | None, str | None, str | None, di
     Returns (srt_text, sub_lang, sub_kind, meta).
     Returns (None, None, None, meta) si pas de FR (définitif, 0 hit timedtext).
     """
+    video_url = f"https://www.youtube.com/watch?v={youtube_str_id}"
     tmpdir = tempfile.mkdtemp(prefix="ytsubs_")
     try:
         return _do_download(video_url, tmpdir)

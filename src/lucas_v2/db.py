@@ -18,7 +18,7 @@ def search_chunks(conn, query: str, limit: int = 20):
     """
     rows = conn.execute(
         "SELECT tc.id, tc.fk_video_id, tc.seq_no, tc.start_s, tc.end_s, tc.text, "
-        "substr(v.video_url, instr(v.video_url, 'v=') + 2) AS youtube_id, "
+        "v.youtube_str_id AS youtube_id, "
         "v.title AS video_title, "
         "snippet(transcript_chunk_fts, 0, '<b>', '</b>', '…', 12) AS snippet, "
         "bm25(transcript_chunk_fts) AS rank "
@@ -49,24 +49,24 @@ def upsert_channel(conn, channel_url: str, channel_id: str | None, title: str | 
 
 
 def upsert_video(conn, fk_channel_id: int | None,
-                 video_url: str, title: str | None, upload_date: str | None,
+                 youtube_str_id: str, title: str | None, upload_date: str | None,
                  duration_s: int | None, sub_lang: str | None, sub_kind: str | None,
-                 status: str, error: str | None) -> int:
-    """Upsert video par video_url, retourne l'id local (video.id) pour la FK transcript_chunk.
+                 owner: str | None, status: str, error: str | None) -> int:
+    """Upsert video par youtube_str_id, retourne l'id local (video.id) pour la FK transcript_chunk.
 
     Ne commit PAS : l'appelant doit appeler conn.commit() après avoir inséré les chunks.
     """
     cur = conn.execute(
-        "INSERT INTO video (fk_channel_id, video_url, title, "
-        "upload_date, duration_s, sub_lang, sub_kind, status, error) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(video_url) DO UPDATE SET "
+        "INSERT INTO video (fk_channel_id, youtube_str_id, title, "
+        "upload_date, duration_s, sub_lang, sub_kind, owner, status, error) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(youtube_str_id) DO UPDATE SET "
         "fk_channel_id=excluded.fk_channel_id, title=excluded.title, upload_date=excluded.upload_date, "
         "duration_s=excluded.duration_s, sub_lang=excluded.sub_lang, sub_kind=excluded.sub_kind, "
-        "status=excluded.status, error=excluded.error, scraped_at=datetime('now') "
+        "owner=excluded.owner, status=excluded.status, error=excluded.error, scraped_at=datetime('now') "
         "RETURNING id",
-        (fk_channel_id, video_url, title, upload_date,
-         duration_s, sub_lang, sub_kind, status, error),
+        (fk_channel_id, youtube_str_id, title, upload_date,
+         duration_s, sub_lang, sub_kind, owner, status, error),
     )
     return cur.fetchone()[0]
 
@@ -99,16 +99,16 @@ def replace_chunks(conn, fk_video_id: int, chunks, *, delete_existing: bool = Tr
         conn.execute(f"INSERT INTO transcript_chunk ({cols}) VALUES {placeholders}", flat)
 
 
-def video_exists_ok(conn, video_url: str) -> bool:
+def video_exists_ok(conn, youtube_str_id: str) -> bool:
     row = conn.execute(
-        "SELECT 1 FROM video WHERE video_url=? AND status='ok'", (video_url,)
+        "SELECT 1 FROM video WHERE youtube_str_id=? AND status='ok'", (youtube_str_id,)
     ).fetchone()
     return row is not None
 
 
-def video_exists(conn, video_url: str) -> bool:
+def video_exists(conn, youtube_str_id: str) -> bool:
     """True si la vidéo a déjà été scrapée, quel que soit son statut."""
     row = conn.execute(
-        "SELECT 1 FROM video WHERE video_url=?", (video_url,)
+        "SELECT 1 FROM video WHERE youtube_str_id=?", (youtube_str_id,)
     ).fetchone()
     return row is not None
