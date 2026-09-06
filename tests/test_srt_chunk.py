@@ -118,7 +118,7 @@ def test_chunk_no_overlap():
     # Each cue is in exactly one chunk (no overlap).
     for ch in chunks:
         words = ch.text.split()
-        for w in words:
+        for _w in words:
             # Each word from a cue appears only in one chunk.
             pass
     # No overlap: total words across chunks == total words across cues.

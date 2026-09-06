@@ -31,6 +31,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=6.0",
     "mypy>=1.14",
+    "pyright>=1.1.411",
 ]
 
 [tool.pytest.ini_options]
@@ -46,3 +47,72 @@ source = ["lucas_v2"]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.pyright]
+# ------------------------------------------------------------------------------
+# Target Environment
+# Sets the target Python version and OS platform for standard library checks.
+# Keeps local VS Code analysis aligned with CI pipelines regardless of host OS.
+# ------------------------------------------------------------------------------
+pythonVersion = "3.11"
+pythonPlatform = "Linux"
+
+# ------------------------------------------------------------------------------
+# Source File Scoping
+# Limits type checking strictly to your project files, ignoring build artifacts,
+# cache folders, and virtual environments.
+# ------------------------------------------------------------------------------
+include = [
+    "src",
+    "tests"
+]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv",
+    "**/.tox",
+    "**/build",
+    "**/dist"
+]
+
+# ------------------------------------------------------------------------------
+# Import & Execution Rules
+# Alignment keys to ensure Pylance and Pyright handle third-party libraries the same.
+# ------------------------------------------------------------------------------
+# Ensures Pyright parses source code of untyped packages (matching default Pylance behavior)
+useLibraryCodeForTypes = true
+
+# Prevents import errors if you use editable installs or 'src' layout
+extraPaths = ["src"]
+
+# Custom stub directory if you write local .pyi type stubs
+stubPath = "typings"
+
+# ------------------------------------------------------------------------------
+# Diagnostic Level
+# Options: "off", "basic", "standard", or "strict"
+# "standard" is the recommended baseline for modern typed Python code.
+# ------------------------------------------------------------------------------
+typeCheckingMode = "strict"
+
+# ------------------------------------------------------------------------------
+# Explicit Rule Overrides
+# Explicitly setting these ensures Pylance user settings in settings.json
+# cannot silently diverge from Pyright CLI behavior.
+# ------------------------------------------------------------------------------
+reportMissingImports = "error"
+reportMissingTypeStubs = false
+reportImportCycles = "warning"
+reportUnusedImport = "warning"
+reportUnusedClass = "warning"
+reportUnusedFunction = "warning"
+reportUnusedVariable = "warning"
+reportDuplicateImport = "error"
+reportWildcardImportFromLibrary = "error"
+reportPrivateUsage = "warning"
+reportConstantRedefinition = "error"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+reportUntypedFunctionDecorator = "warning"
+reportUntypedClassDecorator = "warning"
+

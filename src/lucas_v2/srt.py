@@ -1,24 +1,26 @@
-import re
+from __future__ import annotations
+
 import html
+import re
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class Cue:
     start_s: int
     end_s: int
     text: str
 
 
-_SRT_BLOCK = re.compile(
+_SRT_BLOCK: re.Pattern[str] = re.compile(
     r"(\d+)\s*\n"
     r"(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\s*\n"
     r"((?:(?!\n\n|\Z).)*)",
     re.DOTALL,
 )
 
-_TAG_RE = re.compile(r"<[^>]+>")
-_POSITION_RE = re.compile(r"(?:align|position|line):\s*\S+", re.IGNORECASE)
+_TAG_RE: re.Pattern[str] = re.compile(r"<[^>]+>")
+_POSITION_RE: re.Pattern[str] = re.compile(r"(?:align|position|line):\s*\S+", re.IGNORECASE)
 
 
 def parse_srt(text: str) -> list[Cue]:
@@ -27,13 +29,13 @@ def parse_srt(text: str) -> list[Cue]:
     Timestamps converted to seconds (floor start, ceil end).
     HTML entities unescaped, tags stripped, multi-lines joined.
     """
-    cues = []
+    cues: list[Cue] = []
     for match in _SRT_BLOCK.finditer(text):
-        start_str = match.group(2)
-        end_str = match.group(3)
-        raw_text = match.group(4)
+        start_str: str = match.group(2)
+        end_str: str = match.group(3)
+        raw_text: str = match.group(4)
 
-        lines = []
+        lines: list[str] = []
         for line in raw_text.strip().split("\n"):
             line = _TAG_RE.sub("", line)
             line = _POSITION_RE.sub("", line)
@@ -42,7 +44,7 @@ def parse_srt(text: str) -> list[Cue]:
             if line:
                 lines.append(line)
 
-        combined = " ".join(lines)
+        combined: str = " ".join(lines)
         if not combined:
             continue
 
@@ -57,14 +59,22 @@ def parse_srt(text: str) -> list[Cue]:
 
 def _time_to_s(ts: str) -> int:
     """HH:MM:SS,mmm → floor seconds."""
-    parts = ts.replace(",", ":").split(":")
+    parts: list[str] = ts.replace(",", ":").split(":")
+    h: int
+    m: int
+    s: int
+    _ms: int
     h, m, s, _ms = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
     return h * 3600 + m * 60 + s
 
 
 def _time_to_s_ceil(ts: str) -> int:
     """HH:MM:SS,mmm → ceil seconds (0ms stays same)."""
-    parts = ts.replace(",", ":").split(":")
+    parts: list[str] = ts.replace(",", ":").split(":")
+    h: int
+    m: int
+    s: int
+    ms: int
     h, m, s, ms = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
-    total = h * 3600 + m * 60 + s
+    total: int = h * 3600 + m * 60 + s
     return total + (1 if ms > 0 else 0)

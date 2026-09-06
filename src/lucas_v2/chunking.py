@@ -8,11 +8,11 @@ from typing import Any
 
 from lucas_v2.srt import Cue
 
-MAX_CONTENT_TOKENS = 126  # +2 [CLS]/[SEP] = 128 total for MiniLM
-SOFT_MIN = 110
-MIN_TAIL = 30
+MAX_CONTENT_TOKENS: int = 126  # +2 [CLS]/[SEP] = 128 total for MiniLM
+SOFT_MIN: int = 110
+MIN_TAIL: int = 30
 
-_MODEL_NAME = os.environ.get(
+_MODEL_NAME: str = os.environ.get(
     "LUCAS_TOKENIZER",
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
 )
@@ -26,17 +26,17 @@ def get_tokenizer() -> Any:
         try:
             os.environ.setdefault("HF_HUB_OFFLINE", "1")
             from transformers import AutoTokenizer
-            _tokenizer = AutoTokenizer.from_pretrained(_MODEL_NAME)
+            _tokenizer = AutoTokenizer.from_pretrained(_MODEL_NAME)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
         except Exception as exc:
             warnings.warn(
                 f"Tokenizer HF indisponible ({exc}), fallback whitespace.", stacklevel=2
             )
             _tokenizer = None
-    return _tokenizer
+    return _tokenizer  # pyright: ignore[reportUnknownVariableType]
 
 
 def count_tokens(text: str, tokenizer: Any = None) -> int:
-    tok = tokenizer or get_tokenizer()
+    tok: Any = tokenizer or get_tokenizer()
     if tok is None:
         return len(text.split())
     return len(tok.encode(text, add_special_tokens=False))
@@ -60,7 +60,6 @@ def _split_oversize(cue: Cue, max_tokens: int, tokenizer: Any = None) -> list[Ch
     intra-cue splitting occurs)."""
     words = cue.text.split()
     chunks: list[Chunk] = []
-    part_words: list[str] = []
     part_text = ""
 
     for word in words:
@@ -74,10 +73,8 @@ def _split_oversize(cue: Cue, max_tokens: int, tokenizer: Any = None) -> list[Ch
                     text=part_text,
                     tokens=count_tokens(part_text, tokenizer),
                 ))
-            part_words = [word]
             part_text = word
         else:
-            part_words.append(word)
             part_text = candidate
 
     if part_text:

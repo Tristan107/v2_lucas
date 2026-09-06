@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-INTER_VIDEO_DELAY_S = 3
-
 import click
 from dotenv import load_dotenv
 
 from lucas_v2.config import ChannelSpec
-from lucas_v2.chunking import Chunk
+
+INTER_VIDEO_DELAY_S: int = 3
 
 
 def main() -> None:
@@ -25,14 +23,17 @@ def cli() -> None:
     """Lucas v2 - YouTube transcript ingestion tool."""
 
 
-def _resolve_channel(spec: ChannelSpec, conn: Any) -> int | None:
+def _resolve_channel(spec: ChannelSpec, conn: Any) -> tuple[int, str] | None:
     from lucas_v2.db import upsert_channel
     from lucas_v2.youtube_api import resolve_channel_id
 
     try:
+        yt_channel_id: str
+        channel_title: str
         yt_channel_id, channel_title = resolve_channel_id(spec.url)
         click.echo(f"  channelId: {yt_channel_id} ({channel_title})")
-        return upsert_channel(conn, spec.url, yt_channel_id, channel_title)
+        row_id: int = upsert_channel(conn, spec.url, yt_channel_id, channel_title)
+        return row_id, yt_channel_id
     except Exception as e:
         click.echo(f"  ERREUR résolution chaîne : {e}", err=True)
         return None
@@ -61,9 +62,13 @@ def _download_and_store(
     from lucas_v2.srt import parse_srt
     from lucas_v2.chunking import chunk_cues
 
-    vid_yt_id = str(vid["youtube_str_id"])
+    vid_yt_id: str = str(vid["youtube_str_id"])
 
     try:
+        srt_text: str | None
+        sub_lang: str | None
+        sub_kind: str | None
+        _meta: dict[str, Any]
         srt_text, sub_lang, sub_kind, _meta = download_srt(vid_yt_id)
     except RateLimitedError as e:
         click.echo(f"     RATE-LIMIT, vidéo skippée sans insertion : {e}", err=True)
@@ -92,7 +97,7 @@ def _download_and_store(
     chunks = chunk_cues(cues, tokenizer=tok)
     click.echo(f"     {len(cues)} cues → {len(chunks)} chunks ({sub_kind})")
 
-    video_row_id = upsert_video(
+    video_row_id: int = upsert_video(
         conn, channel_row_id, vid_yt_id,
         vid.get("title"), vid.get("upload_date"), vid.get("duration_s"),
         sub_lang, sub_kind, spec.owner, "ok", None,
@@ -108,10 +113,10 @@ def _process_videos(
     from lucas_v2.db import video_exists
 
     for i, vid in enumerate(videos):
-        vid_yt_id = str(vid["youtube_str_id"])
+        vid_yt_id: str = str(vid["youtube_str_id"])
         click.echo(f"\n  >> {vid['title']} ({vid_yt_id})")
 
-        is_new = not video_exists(conn, vid_yt_id)
+        is_new: bool = not video_exists(conn, vid_yt_id)
         if not force and not is_new:
             click.echo("     Déjà scrapée, skip (utiliser --force pour re-scraper).")
             continue
@@ -138,27 +143,30 @@ def ingest(config_path: str, dry_run: bool, force: bool) -> None:
     from lucas_v2.schema import init_schema
     from lucas_v2.chunking import get_tokenizer, MAX_CONTENT_TOKENS
 
-    config_file = Path(config_path)
+    config_file: Path = Path(config_path)
     if not config_file.exists():
         click.echo(f"Config introuvable : {config_path}", err=True)
         sys.exit(1)
 
-    channels = load_channels(config_path)
+    channels: list[ChannelSpec] = load_channels(config_path)
     click.echo(f"{len(channels)} chaîne(s) à traiter.")
 
-    conn = connect()
+    conn: Any = connect()
     init_schema(conn)
-    tok = get_tokenizer()
-    tok_name = "MiniLM" if tok is not None else "whitespace"
+    tok: Any = get_tokenizer()
+    tok_name: str = "MiniLM" if tok is not None else "whitespace"
     click.echo(f"Tokenizer: {tok_name} (max={MAX_CONTENT_TOKENS})")
 
     for spec in channels:
         click.echo(f"\n--- {spec.url} ---")
-        channel_row_id = _resolve_channel(spec, conn)
-        if channel_row_id is None:
+        result: tuple[int, str] | None = _resolve_channel(spec, conn)
+        if result is None:
             continue
+        channel_row_id: int
+        yt_channel_id: str
+        channel_row_id, yt_channel_id = result
 
-        videos = _fetch_videos(spec.url, spec)
+        videos: list[dict[str, Any]] = _fetch_videos(yt_channel_id, spec)
         click.echo(f"  {len(videos)} vidéo(s) trouvée(s).")
         _process_videos(videos, channel_row_id, spec, conn, force, dry_run, tok)
 

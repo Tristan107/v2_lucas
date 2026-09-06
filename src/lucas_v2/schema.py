@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_SCHEMA_SCRIPT = """
+_SCHEMA_SCRIPT: str = """
 CREATE TABLE IF NOT EXISTS channel (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel_url TEXT NOT NULL UNIQUE,

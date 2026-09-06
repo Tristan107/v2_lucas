@@ -5,15 +5,15 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from googleapiclient.discovery import build
+from googleapiclient.discovery import build  # pyright: ignore[reportMissingModuleSource, reportUnknownVariableType]
 
 
 def _get_client() -> Any:
-    api_key = os.environ["YOUTUBE_API_KEY"]
-    return build("youtube", "v3", developerKey=api_key)
+    api_key: str = os.environ["YOUTUBE_API_KEY"]
+    return build("youtube", "v3", developerKey=api_key)  # pyright: ignore[reportUnknownVariableType]
 
 
-_CHANNEL_REF_RE = re.compile(
+_CHANNEL_REF_RE: re.Pattern[str] = re.compile(
     r"(?:/channel/(UC[\w-]{20,})"          # 1 – /channel/UC…
     r"|youtube\.com/@([^/?#]*)"             # 2 – youtube.com/@handle
     r"|youtube\.com/(?:c|user)/([^/?#]*)"   # 3 – youtube.com/c/… or /user/…
@@ -27,8 +27,8 @@ def _extract_channel_ref(url_or_handle: str) -> tuple[str, str]:
     kind is 'id' (UCxxx), 'handle' (@xxx), or 'query' (fallback search).
     Accepts full URLs, bare @handles, or plain names.
     """
-    s = url_or_handle.strip().rstrip("/")
-    m = _CHANNEL_REF_RE.search(s)
+    s: str = url_or_handle.strip().rstrip("/")
+    m: re.Match[str] | None = _CHANNEL_REF_RE.search(s)
     if m:
         if m.group(1):
             return "id", m.group(1)
@@ -80,7 +80,9 @@ def _resolve_by_search(youtube: Any, query: str) -> tuple[str, str]:
 
 def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
     """Resolve channel URL or @Handle → (channel_id, title)."""
-    youtube = _get_client()
+    youtube: Any = _get_client()
+    kind: str
+    value: str
     kind, value = _extract_channel_ref(url_or_handle)
 
     if kind == "id":
@@ -193,25 +195,27 @@ def list_videos(channel_id: str, max_videos: int = 1,
 
     Returns list of dicts: {video_id, title, upload_date, duration_s, youtube_str_id, published_at}.
     """
-    youtube = _get_client()
+    youtube: Any = _get_client()
 
-    ch_resp = youtube.channels().list(
+    ch_resp: dict[str, Any] = youtube.channels().list(
         part="contentDetails", id=channel_id
     ).execute()
-    items = ch_resp.get("items", [])
+    items: list[dict[str, Any]] = ch_resp.get("items", [])
     if not items:
         return []
-    uploads_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    uploads_id: str = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
-    cutoff = None
+    cutoff: datetime | None = None
     if since_days:
         cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
 
+    video_ids: list[str]
+    video_meta: dict[str, dict[str, str]]
     video_ids, video_meta = _fetch_playlist_videos(youtube, uploads_id, max_videos, cutoff)
     if not video_ids:
         return []
 
-    results = _fetch_video_details(youtube, video_ids[:max_videos], video_meta)
+    results: list[dict[str, Any]] = _fetch_video_details(youtube, video_ids[:max_videos], video_meta)
     results.sort(key=lambda x: x["published_at"], reverse=True)
     return results[:max_videos]
 
@@ -220,9 +224,9 @@ def _parse_iso_duration(iso: str) -> int | None:
     """PT1H2M3S → 3723 seconds."""
     if not iso or not iso.startswith("PT"):
         return None
-    s = iso[2:]
-    total = 0
-    current = ""
+    s: str = iso[2:]
+    total: int = 0
+    current: str = ""
     for c in s:
         if c.isdigit():
             current += c
@@ -242,7 +246,7 @@ def _iso_to_yyyymmdd(iso: str) -> str | None:
     if not iso:
         return None
     try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        dt: datetime = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         return dt.strftime("%Y%m%d")
     except Exception:
         return None

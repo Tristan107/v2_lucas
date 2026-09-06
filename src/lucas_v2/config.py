@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Any
 
 import yaml
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ChannelSpec:
     url: str
     max_videos: int
@@ -15,17 +17,17 @@ class ChannelSpec:
 
 def load_channels(path: str) -> list[ChannelSpec]:
     with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+        data: dict[str, Any] = yaml.safe_load(f)
 
-    defaults = data.get("defaults", {})
-    d_max_videos = defaults.get("max_videos", 1)
-    d_since_days = defaults.get("since_days")
-    d_lang = defaults.get("lang", "fr")
-    d_owner = defaults.get("owner")
+    defaults: dict[str, Any] = data.get("defaults", {})
+    d_max_videos: int = defaults.get("max_videos", 1)
+    d_since_days: int | None = defaults.get("since_days")
+    d_lang: str = defaults.get("lang", "fr")
+    d_owner: str | None = defaults.get("owner")
 
-    channels = []
+    channels: list[ChannelSpec] = []
     for ch in data.get("channels", []):
-        url = ch.get("url")
+        url: str | None = ch.get("url")
         if not url:
             continue
         channels.append(ChannelSpec(

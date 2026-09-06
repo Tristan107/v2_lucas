@@ -3,13 +3,15 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import libsql_experimental as libsql
+import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
+
+from lucas_v2.chunking import Chunk
 
 
 def connect() -> Any:
-    url = os.environ["TURSO_DATABASE_URL"]
-    token = os.environ.get("TURSO_AUTH_TOKEN")
-    return libsql.connect(url, auth_token=token)
+    url: str = os.environ["TURSO_DATABASE_URL"]
+    token: str | None = os.environ.get("TURSO_AUTH_TOKEN")
+    return libsql.connect(url, auth_token=token)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
 
 
 def search_chunks(conn: Any, query: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -77,7 +79,7 @@ def upsert_video(conn: Any, fk_channel_id: int | None,
 _CHUNK_BATCH = 500  # rows per INSERT statement (sécurité, pas de limite SQLite stricte ici)
 
 
-def replace_chunks(conn: Any, fk_video_id: int, chunks: list[Any], *, delete_existing: bool = True) -> None:
+def replace_chunks(conn: Any, fk_video_id: int, chunks: list[Chunk], *, delete_existing: bool = True) -> None:
     """Insère les chunks en bulk multi-VALUES (1 seul SQL par batch) pour minimiser
     les writes Turso et les round-trips HTTP.
 
@@ -100,13 +102,6 @@ def replace_chunks(conn: Any, fk_video_id: int, chunks: list[Any], *, delete_exi
             for v in (fk_video_id, ch.seq_no, ch.start_s, ch.end_s, ch.text, ch.tokens)
         )
         conn.execute(f"INSERT INTO transcript_chunk ({cols}) VALUES {placeholders}", flat)
-
-
-def video_exists_ok(conn: Any, youtube_str_id: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM video WHERE youtube_str_id=? AND status='ok'", (youtube_str_id,)
-    ).fetchone()
-    return row is not None
 
 
 def video_exists(conn: Any, youtube_str_id: str) -> bool:

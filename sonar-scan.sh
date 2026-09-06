@@ -12,7 +12,9 @@ uvx pysonar \
   --sonar-host-url="$SONAR_HOST" \
   --sonar-token="$SONAR_TOKEN" \
   --sonar-project-key="$PROJECT_KEY" \
-  --sonar-python-coverage-report-paths=coverage.xml
+  --sonar-python-coverage-report-paths=coverage.xml \
+  -Dsonar.python.version="3.11, 3.12" \
+  -Dsonar.exclusions=".venv/**"
 
 TASK_ID="$(sed -n 's/^ceTaskId=//p' .sonar/report-task.txt)"
 if [ -z "$TASK_ID" ]; then

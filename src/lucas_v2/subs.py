@@ -7,15 +7,15 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yt_dlp
-from yt_dlp.utils import DownloadError
+import yt_dlp  # pyright: ignore[reportMissingModuleSource]
+from yt_dlp.utils import DownloadError  # pyright: ignore[reportMissingModuleSource]
 
 
 class RateLimitedError(Exception):
     """429 YouTube : ne pas insérer en BDD, retry automatique au prochain run."""
 
 
-_SLEEP_SUBTITLES_S = 5
+_SLEEP_SUBTITLES_S: int = 5
 
 
 def download_srt(youtube_str_id: str) -> tuple[str | None, str | None, str | None, dict[str, Any]]:
@@ -63,17 +63,19 @@ def _extract_meta(info: dict[str, Any]) -> dict[str, Any]:
 
 
 def _do_download(video_url: str, tmpdir: str) -> tuple[str | None, str | None, str | None, dict[str, Any]]:
-    with yt_dlp.YoutubeDL(_base_opts(tmpdir)) as ydl:
-        info = ydl.extract_info(video_url, download=False)
+    with yt_dlp.YoutubeDL(_base_opts(tmpdir)) as ydl:  # pyright: ignore[reportArgumentType]
+        info = ydl.extract_info(video_url, download=False)  # pyright: ignore[reportAssignmentType]
 
     if not info:
         return None, None, None, {}
 
-    meta = _extract_meta(info)
+    meta: dict[str, Any] = _extract_meta(info)  # pyright: ignore[reportArgumentType]
 
-    manual = set((info.get("subtitles") or {}).keys())
-    auto = set((info.get("automatic_captions") or {}).keys())
+    manual: set[str] = set((info.get("subtitles") or {}).keys())  # pyright: ignore[reportUnknownArgumentType]
+    auto: set[str] = set((info.get("automatic_captions") or {}).keys())  # pyright: ignore[reportUnknownArgumentType]
 
+    chosen: str | None
+    sub_kind: str | None
     chosen, sub_kind = _choose_track(manual, auto)
     if chosen is None:
         return None, None, None, meta
@@ -89,17 +91,17 @@ def _do_download(video_url: str, tmpdir: str) -> tuple[str | None, str | None, s
 
     _run_with_retry(ydl_opts, video_url)
 
-    srt_files = sorted(Path(tmpdir).glob("*.srt"))
+    srt_files: list[Path] = sorted(Path(tmpdir).glob("*.srt"))
     if not srt_files:
         return None, None, None, meta
 
-    srt_text = srt_files[0].read_text(encoding="utf-8")
+    srt_text: str = srt_files[0].read_text(encoding="utf-8")
     return srt_text, chosen, sub_kind, meta
 
 
 def _run_with_retry(ydl_opts: dict[str, Any], video_url: str) -> None:
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # pyright: ignore[reportArgumentType]
             ydl.extract_info(video_url, download=True)
     except DownloadError as e:
         if "429" not in str(e):
@@ -110,7 +112,7 @@ def _run_with_retry(ydl_opts: dict[str, Any], video_url: str) -> None:
 
 def _retry_download(ydl_opts: dict[str, Any], video_url: str) -> None:
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # pyright: ignore[reportArgumentType]
             ydl.extract_info(video_url, download=True)
     except DownloadError as e2:
         if "429" in str(e2):
@@ -134,7 +136,4 @@ def _choose_track(manual: set[str], auto: set[str]) -> tuple[str | None, str | N
     return None, None
 
 
-def _lang_of(path: Path) -> str:
-    stem = path.stem
-    parts = stem.split(".")
-    return parts[-1] if len(parts) > 1 else "fr"
+
