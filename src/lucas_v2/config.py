@@ -13,6 +13,7 @@ class ChannelSpec:
     since_days: int | None
     lang: str
     owner: str | None = None
+    orientation: str | None = None
 
 
 def load_channels(path: str) -> list[ChannelSpec]:
@@ -24,6 +25,7 @@ def load_channels(path: str) -> list[ChannelSpec]:
     d_since_days: int | None = defaults.get("since_days")
     d_lang: str = defaults.get("lang", "fr")
     d_owner: str | None = defaults.get("owner")
+    d_orientation: str | None = defaults.get("orientation")
 
     channels: list[ChannelSpec] = []
     for ch in data.get("channels", []):
@@ -36,5 +38,6 @@ def load_channels(path: str) -> list[ChannelSpec]:
             since_days=ch.get("since_days", d_since_days),
             lang=ch.get("lang", d_lang),
             owner=ch.get("owner", d_owner),
+            orientation=ch.get("orientation", d_orientation),
         ))
     return channels

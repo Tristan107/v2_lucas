@@ -75,7 +75,10 @@ uv run lucas-v2 ingest -c channels.yaml --dry-run
 uv run lucas-v2 ingest -c channels.yaml
 
 # Forcer le re-scrap des vidéos déjà en base
-uv run lucas-v2 ingest -c channels.yaml --force
+uv run lucas-v2 ingest -c channels.yaml --force-all
+
+# Re-télécharger une vidéo spécifique par URL
+uv run lucas-v2 ingest -c channels.yaml --url "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Aide
 uv run lucas-v2 --help

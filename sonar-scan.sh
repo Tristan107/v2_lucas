@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SONAR_HOST="${SONAR_HOST:-http://localhost:9000}"
-SONAR_TOKEN="${SONAR_TOKEN:-sqa_b79b9054ff75dfea0341774492504d8573f46e22}"
+SONAR_TOKEN="${SONAR_TOKEN}"
 PROJECT_KEY="v2_lucas"
 MAX_WAIT=120
 

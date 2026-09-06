@@ -46,3 +46,6 @@ htmlcov/
 .sonar/
 coverage.xml
 sonar_issues.json
+
+# Logs
+logs/

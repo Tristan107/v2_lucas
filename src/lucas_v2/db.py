@@ -39,12 +39,16 @@ def search_chunks(conn: Any, query: str, limit: int = 20) -> list[dict[str, Any]
     return [dict(zip(cols, r)) for r in rows]
 
 
-def upsert_channel(conn: Any, channel_url: str, channel_id: str | None, title: str | None) -> int:
+def upsert_channel(conn: Any, channel_url: str, channel_id: str | None,
+                   title: str | None, orientation: str | None,
+                   owner: str | None) -> int:
     """Upsert channel, retourne l'id local (channel.id) pour la FK video."""
     conn.execute(
-        "INSERT INTO channel (channel_url, channel_id, title) VALUES (?, ?, ?) "
-        "ON CONFLICT(channel_url) DO UPDATE SET channel_id=excluded.channel_id, title=excluded.title",
-        (channel_url, channel_id, title),
+        "INSERT INTO channel (channel_url, channel_id, title, orientation, owner) VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(channel_url) DO UPDATE SET "
+        "channel_id=excluded.channel_id, title=excluded.title, orientation=excluded.orientation, "
+        "owner=COALESCE(excluded.owner, channel.owner)",
+        (channel_url, channel_id, title, orientation, owner),
     )
     conn.commit()
     row = conn.execute(
@@ -56,22 +60,22 @@ def upsert_channel(conn: Any, channel_url: str, channel_id: str | None, title: s
 def upsert_video(conn: Any, fk_channel_id: int | None,
                  youtube_str_id: str, title: str | None, upload_date: str | None,
                  duration_s: int | None, sub_lang: str | None, sub_kind: str | None,
-                 owner: str | None, status: str, error: str | None) -> int:
+                 status: str, error: str | None) -> int:
     """Upsert video par youtube_str_id, retourne l'id local (video.id) pour la FK transcript_chunk.
 
     Ne commit PAS : l'appelant doit appeler conn.commit() après avoir inséré les chunks.
     """
     cur = conn.execute(
         "INSERT INTO video (fk_channel_id, youtube_str_id, title, "
-        "upload_date, duration_s, sub_lang, sub_kind, owner, status, error) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "upload_date, duration_s, sub_lang, sub_kind, status, error) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(youtube_str_id) DO UPDATE SET "
         "fk_channel_id=excluded.fk_channel_id, title=excluded.title, upload_date=excluded.upload_date, "
         "duration_s=excluded.duration_s, sub_lang=excluded.sub_lang, sub_kind=excluded.sub_kind, "
-        "owner=excluded.owner, status=excluded.status, error=excluded.error, scraped_at=datetime('now') "
+        "status=excluded.status, error=excluded.error, scraped_at=datetime('now') "
         "RETURNING id",
         (fk_channel_id, youtube_str_id, title, upload_date,
-         duration_s, sub_lang, sub_kind, owner, status, error),
+         duration_s, sub_lang, sub_kind, status, error),
     )
     return int(cur.fetchone()[0])
 
@@ -110,3 +114,24 @@ def video_exists(conn: Any, youtube_str_id: str) -> bool:
         "SELECT 1 FROM video WHERE youtube_str_id=?", (youtube_str_id,)
     ).fetchone()
     return row is not None
+
+
+def find_video_channel(conn: Any, youtube_str_id: str) -> tuple[int, str] | None:
+    """Return (channel_row_id, channel_yt_id) for a video, or None if not found."""
+    row = conn.execute(
+        "SELECT v.fk_channel_id, c.channel_id "
+        "FROM video v JOIN channel c ON v.fk_channel_id = c.id "
+        "WHERE v.youtube_str_id=?",
+        (youtube_str_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), str(row[1])
+
+
+def get_channel_url(conn: Any, channel_row_id: int) -> str | None:
+    """Return the channel_url for a given channel row ID."""
+    row = conn.execute(
+        "SELECT channel_url FROM channel WHERE id=?", (channel_row_id,)
+    ).fetchone()
+    return str(row[0]) if row else None

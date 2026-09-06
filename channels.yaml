@@ -1,8 +1,63 @@
 defaults:
-  max_videos: 1
+  max_videos: 2
   since_days: null
   lang: "fr"
 channels:
+  # Extrême gauche
+  - url: "https://www.youtube.com/@lutteouvriere"
+    owner: "Nathalie Arthaud"
+    orientation: "extrême gauche"
+
+  # Gauche
   - url: "https://www.youtube.com/@JLMelenchon"
     owner: "Jean-Luc Mélenchon"
-    max_videos: 12
+    orientation: "gauche"
+
+  - url: "https://www.youtube.com/@PCF-PartiCommunisteFrancais"
+    owner: "Fabien Roussel"
+    orientation: "gauche"
+
+  - url: "https://www.youtube.com/@LesEcologistesFR"
+    owner: "Marine Tondelier"
+    orientation: "gauche"
+
+  # Centre gauche
+
+  - url: "https://www.youtube.com/@OlivierFaure2027"
+    owner: "Olivier Faure"
+    orientation: "centre gauche"
+
+  - url: "https://www.youtube.com/@RaphaelGlucksmann1"
+    owner: "Raphaël Glucksmann"
+    orientation: "centre gauche"
+
+  # Centre droit
+  - url: "https://www.youtube.com/@gabriel_attal"
+    owner: "Gabriel Attal"
+    orientation: "centre droit"
+
+  - url: "https://www.youtube.com/@AvecEdouard"
+    owner: "Édouard Philippe"
+    orientation: "centre droit"
+
+  # Droite
+  - url: "https://www.youtube.com/@dominiquedevillepin"
+    owner: "Dominique de Villepin"
+    orientation: "droite"
+
+  - url: "https://www.youtube.com/@Bruno_Retailleau"
+    owner: "Bruno Retailleau"
+    orientation: "droite"
+
+  # Extrême droite
+  - url: "https://www.youtube.com/@dupontaignannicolas"
+    owner: "Nicolas Dupont-Aignan"
+    orientation: "extrême droite"
+
+  - url: "https://www.youtube.com/@MarineLePenOfficiel"
+    owner: "Marine Le Pen"
+    orientation: "extrême droite"
+
+  - url: "https://www.youtube.com/@EricZemmourOfficiel"
+    owner: "Éric Zemmour"
+    orientation: "extrême droite"
