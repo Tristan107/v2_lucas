@@ -5,4 +5,4 @@ defaults:
 channels:
   - url: "https://www.youtube.com/@JLMelenchon"
     owner: "Jean-Luc Mélenchon"
-    max_videos: 10
+    max_videos: 11

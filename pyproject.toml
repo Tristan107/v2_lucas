@@ -29,4 +29,20 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-cov>=6.0",
+    "mypy>=1.14",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["lucas_v2"]
+
+[tool.coverage.report]
+show_missing = true

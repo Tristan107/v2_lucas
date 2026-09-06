@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 _SCHEMA_SCRIPT = """
 CREATE TABLE IF NOT EXISTS channel (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +63,7 @@ END;
 """
 
 
-def init_schema(conn):
+def init_schema(conn: Any) -> None:
     try:
         conn.execute("PRAGMA foreign_keys=ON;")
     except Exception:

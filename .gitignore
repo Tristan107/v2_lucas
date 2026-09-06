@@ -41,3 +41,8 @@ htmlcov/
 .DS_Store
 .vscode/
 .idea/
+
+# Sonar files
+.sonar/
+coverage.xml
+sonar_issues.json

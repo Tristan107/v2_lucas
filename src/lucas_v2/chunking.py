@@ -4,6 +4,7 @@ import os
 import re
 import warnings
 from dataclasses import dataclass
+from typing import Any
 
 from lucas_v2.srt import Cue
 
@@ -16,10 +17,10 @@ _MODEL_NAME = os.environ.get(
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
 )
 
-_tokenizer = None
+_tokenizer: Any = None
 
 
-def get_tokenizer():
+def get_tokenizer() -> Any:
     global _tokenizer
     if _tokenizer is None:
         try:
@@ -34,7 +35,7 @@ def get_tokenizer():
     return _tokenizer
 
 
-def count_tokens(text: str, tokenizer=None) -> int:
+def count_tokens(text: str, tokenizer: Any = None) -> int:
     tok = tokenizer or get_tokenizer()
     if tok is None:
         return len(text.split())
@@ -51,10 +52,10 @@ class Chunk:
 
 
 def _ends_sentence(text: str) -> bool:
-    return bool(re.search(r"[.;?!:…]|\.{3}$", text.rstrip()))
+    return bool(re.search(r"([.;?!:\u2026])|(\.{3}$)", text.rstrip()))
 
 
-def _split_oversize(cue: Cue, max_tokens: int, tokenizer=None) -> list[Chunk]:
+def _split_oversize(cue: Cue, max_tokens: int, tokenizer: Any = None) -> list[Chunk]:
     """Split a single oversize cue into sub-chunks (the only case where
     intra-cue splitting occurs)."""
     words = cue.text.split()
@@ -91,16 +92,75 @@ def _split_oversize(cue: Cue, max_tokens: int, tokenizer=None) -> list[Chunk]:
     return chunks
 
 
+def _flush_sentence_boundary(
+    cues: list[Cue], i: int, end: int, tokenizer: Any = None,
+) -> int | None:
+    """Search for a sentence boundary in the window and return its index, or None."""
+    for idx in range(i, end + 1):
+        prefix = " ".join(c.text for c in cues[i:idx + 1])
+        if _ends_sentence(prefix) and count_tokens(prefix, tokenizer) >= SOFT_MIN:
+            return idx
+    return None
+
+
+def _flush_chunk(
+    chunks: list[Chunk], seq_no: int,
+    cues: list[Cue], i: int, end: int, tokenizer: Any = None,
+) -> int:
+    """Append a chunk from cues[i..end] and return next seq_no."""
+    text = " ".join(c.text for c in cues[i:end + 1])
+    chunks.append(Chunk(
+        seq_no=seq_no,
+        start_s=cues[i].start_s,
+        end_s=cues[end].end_s,
+        text=text,
+        tokens=count_tokens(text, tokenizer),
+    ))
+    return seq_no + 1
+
+
+def _handle_oversize_cue(
+    cue: Cue, max_tokens: int, chunks: list[Chunk], seq_no: int, tokenizer: Any = None,
+) -> int:
+    """Handle an oversize cue by splitting it. Returns next seq_no."""
+    oversize = _split_oversize(cue, max_tokens, tokenizer)
+    for ch in oversize:
+        chunks.append(Chunk(
+            seq_no=seq_no,
+            start_s=ch.start_s,
+            end_s=ch.end_s,
+            text=ch.text,
+            tokens=ch.tokens,
+        ))
+        seq_no += 1
+    return seq_no
+
+
+def _accumulate_until_limit(
+    cues: list[Cue], i: int, max_tokens: int, tokenizer: Any = None,
+) -> tuple[str, int]:
+    """Accumulate cues starting from i until token limit. Returns (text, end_index)."""
+    j = i
+    text = ""
+    n = len(cues)
+    while j < n:
+        candidate = f"{text} {cues[j].text}".strip() if text else cues[j].text
+        if count_tokens(candidate, tokenizer) > max_tokens:
+            break
+        text = candidate
+        j += 1
+    return text, j - 1
+
+
 def chunk_cues(
     cues: list[Cue],
     max_tokens: int = MAX_CONTENT_TOKENS,
     soft_min: int = SOFT_MIN,
-    overlap_cues: int = 0,
-    tokenizer=None,
+    tokenizer: Any = None,
 ) -> list[Chunk]:
     """Pack cues into chunks of at most ``max_tokens`` WordPiece tokens.
 
-    No overlap between chunks (``overlap_cues=0``). Greedy accumulation:
+    No overlap between chunks. Greedy accumulation:
     cues are added one by one until the token limit is reached, then the
     window is flushed. When a sentence boundary (``.;?!:…`` or ``...``)
     falls within the window near the limit, the flush happens at that
@@ -120,63 +180,23 @@ def chunk_cues(
     while i < n:
         cue_tok = count_tokens(cues[i].text, tokenizer)
         if cue_tok > max_tokens:
-            oversize = _split_oversize(cues[i], max_tokens, tokenizer)
-            for ch in oversize:
-                chunks.append(Chunk(
-                    seq_no=seq_no,
-                    start_s=ch.start_s,
-                    end_s=ch.end_s,
-                    text=ch.text,
-                    tokens=ch.tokens,
-                ))
-                seq_no += 1
+            seq_no = _handle_oversize_cue(cues[i], max_tokens, chunks, seq_no, tokenizer)
             i += 1
             continue
 
-        # Accumulate cues within token budget.
-        j = i
-        text = ""
-        while j < n:
-            candidate = f"{text} {cues[j].text}".strip() if text else cues[j].text
-            if count_tokens(candidate, tokenizer) > max_tokens:
-                break
-            text = candidate
-            j += 1
-
-        end = j - 1
+        text, end = _accumulate_until_limit(cues, i, max_tokens, tokenizer)
 
         # Search for a sentence boundary in the window so we can flush
         # at a natural break when close to the limit.
         if end < n - 1 and count_tokens(text, tokenizer) >= soft_min:
-            k = None
-            prefix = ""
-            for idx in range(i, end + 1):
-                prefix = f"{prefix} {cues[idx].text}".strip() if prefix else cues[idx].text
-                if _ends_sentence(prefix) and count_tokens(prefix, tokenizer) >= soft_min:
-                    k = idx
-                    break
+            k = _flush_sentence_boundary(cues, i, end, tokenizer)
             if k is not None:
-                flush_text = " ".join(c.text for c in cues[i : k + 1])
-                chunks.append(Chunk(
-                    seq_no=seq_no,
-                    start_s=cues[i].start_s,
-                    end_s=cues[k].end_s,
-                    text=flush_text,
-                    tokens=count_tokens(flush_text, tokenizer),
-                ))
-                seq_no += 1
+                seq_no = _flush_chunk(chunks, seq_no, cues, i, k, tokenizer)
                 i = k + 1
                 continue
 
         # No suitable sentence boundary — flush the whole window.
-        chunks.append(Chunk(
-            seq_no=seq_no,
-            start_s=cues[i].start_s,
-            end_s=cues[end].end_s,
-            text=text,
-            tokens=count_tokens(text, tokenizer),
-        ))
-        seq_no += 1
+        seq_no = _flush_chunk(chunks, seq_no, cues, i, end, tokenizer)
         i = end + 1
 
     # Merge tiny tail with previous chunk if possible.

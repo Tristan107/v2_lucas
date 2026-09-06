@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import yt_dlp
 from yt_dlp.utils import DownloadError
@@ -12,11 +15,10 @@ class RateLimitedError(Exception):
     """429 YouTube : ne pas insérer en BDD, retry automatique au prochain run."""
 
 
-# Délai avant chaque téléchargement de sous-titres (anti-429).
 _SLEEP_SUBTITLES_S = 5
 
 
-def download_srt(youtube_str_id: str) -> tuple[str | None, str | None, str | None, dict]:
+def download_srt(youtube_str_id: str) -> tuple[str | None, str | None, str | None, dict[str, Any]]:
     """Download SRT subtitles for a video (1 seule requête timedtext).
 
     Stratégie anti-429 :
@@ -37,7 +39,7 @@ def download_srt(youtube_str_id: str) -> tuple[str | None, str | None, str | Non
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _base_opts(tmpdir: str) -> dict:
+def _base_opts(tmpdir: str) -> dict[str, Any]:
     return {
         "skip_download": True,
         "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
@@ -50,15 +52,8 @@ def _base_opts(tmpdir: str) -> dict:
     }
 
 
-def _do_download(video_url: str, tmpdir: str):
-    # --- 1. Pré-vol : quelles pistes FR existent ? (pas de hit timedtext) ---
-    with yt_dlp.YoutubeDL(_base_opts(tmpdir)) as ydl:
-        info = ydl.extract_info(video_url, download=False)
-
-    if not info:
-        return None, None, None, {}
-
-    meta = {
+def _extract_meta(info: dict[str, Any]) -> dict[str, Any]:
+    return {
         "title": info.get("title"),
         "upload_date": info.get("upload_date"),
         "duration": info.get("duration"),
@@ -66,15 +61,24 @@ def _do_download(video_url: str, tmpdir: str):
         "video_id": info.get("id"),
     }
 
+
+def _do_download(video_url: str, tmpdir: str) -> tuple[str | None, str | None, str | None, dict[str, Any]]:
+    with yt_dlp.YoutubeDL(_base_opts(tmpdir)) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+
+    if not info:
+        return None, None, None, {}
+
+    meta = _extract_meta(info)
+
     manual = set((info.get("subtitles") or {}).keys())
     auto = set((info.get("automatic_captions") or {}).keys())
 
     chosen, sub_kind = _choose_track(manual, auto)
     if chosen is None:
-        return None, None, None, meta  # définitif : rien à télécharger
+        return None, None, None, meta
 
-    # --- 2. Télécharge uniquement la piste choisie (1 hit timedtext) ---
-    ydl_opts = {
+    ydl_opts: dict[str, Any] = {
         **_base_opts(tmpdir),
         "writesubtitles": True,
         "writeautomaticsub": True,
@@ -83,24 +87,7 @@ def _do_download(video_url: str, tmpdir: str):
         "convertsubtitles": "srt",
     }
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.extract_info(video_url, download=True)
-    except DownloadError as e:
-        if "429" in str(e):
-            time.sleep(60)
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.extract_info(video_url, download=True)
-            except DownloadError as e2:
-                if "429" in str(e2):
-                    raise RateLimitedError(
-                        f"Rate-limit YouTube persistant sur {video_url} : "
-                        "vidéo skippée, sera reprise au prochain run."
-                    ) from e2
-                raise
-        else:
-            raise
+    _run_with_retry(ydl_opts, video_url)
 
     srt_files = sorted(Path(tmpdir).glob("*.srt"))
     if not srt_files:
@@ -108,6 +95,30 @@ def _do_download(video_url: str, tmpdir: str):
 
     srt_text = srt_files[0].read_text(encoding="utf-8")
     return srt_text, chosen, sub_kind, meta
+
+
+def _run_with_retry(ydl_opts: dict[str, Any], video_url: str) -> None:
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.extract_info(video_url, download=True)
+    except DownloadError as e:
+        if "429" not in str(e):
+            raise
+        time.sleep(60)
+        _retry_download(ydl_opts, video_url)
+
+
+def _retry_download(ydl_opts: dict[str, Any], video_url: str) -> None:
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.extract_info(video_url, download=True)
+    except DownloadError as e2:
+        if "429" in str(e2):
+            raise RateLimitedError(
+                f"Rate-limit YouTube persistant sur {video_url} : "
+                "vidéo skippée, sera reprise au prochain run."
+            ) from e2
+        raise
 
 
 def _choose_track(manual: set[str], auto: set[str]) -> tuple[str | None, str | None]:
@@ -124,6 +135,6 @@ def _choose_track(manual: set[str], auto: set[str]) -> tuple[str | None, str | N
 
 
 def _lang_of(path: Path) -> str:
-    stem = path.stem  # ex. mcI40Nu7k94.fr-orig
+    stem = path.stem
     parts = stem.split(".")
     return parts[-1] if len(parts) > 1 else "fr"

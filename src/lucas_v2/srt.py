@@ -58,7 +58,7 @@ def parse_srt(text: str) -> list[Cue]:
 def _time_to_s(ts: str) -> int:
     """HH:MM:SS,mmm → floor seconds."""
     parts = ts.replace(",", ":").split(":")
-    h, m, s, ms = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+    h, m, s, _ms = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
     return h * 3600 + m * 60 + s
 
 

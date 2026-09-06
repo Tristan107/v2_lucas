@@ -1,15 +1,18 @@
+from __future__ import annotations
+
 import os
+from typing import Any
 
 import libsql_experimental as libsql
 
 
-def connect():
+def connect() -> Any:
     url = os.environ["TURSO_DATABASE_URL"]
     token = os.environ.get("TURSO_AUTH_TOKEN")
     return libsql.connect(url, auth_token=token)
 
 
-def search_chunks(conn, query: str, limit: int = 20):
+def search_chunks(conn: Any, query: str, limit: int = 20) -> list[dict[str, Any]]:
     """Recherche plein-texte (FTS5) sur transcript_chunk.text.
 
     query : syntaxe FTS5 ('mots', '\"expression exacte\"', 'prefix*', 'colonne:terme').
@@ -34,7 +37,7 @@ def search_chunks(conn, query: str, limit: int = 20):
     return [dict(zip(cols, r)) for r in rows]
 
 
-def upsert_channel(conn, channel_url: str, channel_id: str | None, title: str | None) -> int:
+def upsert_channel(conn: Any, channel_url: str, channel_id: str | None, title: str | None) -> int:
     """Upsert channel, retourne l'id local (channel.id) pour la FK video."""
     conn.execute(
         "INSERT INTO channel (channel_url, channel_id, title) VALUES (?, ?, ?) "
@@ -45,10 +48,10 @@ def upsert_channel(conn, channel_url: str, channel_id: str | None, title: str | 
     row = conn.execute(
         "SELECT id FROM channel WHERE channel_url=?", (channel_url,)
     ).fetchone()
-    return row[0]
+    return int(row[0])
 
 
-def upsert_video(conn, fk_channel_id: int | None,
+def upsert_video(conn: Any, fk_channel_id: int | None,
                  youtube_str_id: str, title: str | None, upload_date: str | None,
                  duration_s: int | None, sub_lang: str | None, sub_kind: str | None,
                  owner: str | None, status: str, error: str | None) -> int:
@@ -68,13 +71,13 @@ def upsert_video(conn, fk_channel_id: int | None,
         (fk_channel_id, youtube_str_id, title, upload_date,
          duration_s, sub_lang, sub_kind, owner, status, error),
     )
-    return cur.fetchone()[0]
+    return int(cur.fetchone()[0])
 
 
 _CHUNK_BATCH = 500  # rows per INSERT statement (sécurité, pas de limite SQLite stricte ici)
 
 
-def replace_chunks(conn, fk_video_id: int, chunks, *, delete_existing: bool = True):
+def replace_chunks(conn: Any, fk_video_id: int, chunks: list[Any], *, delete_existing: bool = True) -> None:
     """Insère les chunks en bulk multi-VALUES (1 seul SQL par batch) pour minimiser
     les writes Turso et les round-trips HTTP.
 
@@ -99,14 +102,14 @@ def replace_chunks(conn, fk_video_id: int, chunks, *, delete_existing: bool = Tr
         conn.execute(f"INSERT INTO transcript_chunk ({cols}) VALUES {placeholders}", flat)
 
 
-def video_exists_ok(conn, youtube_str_id: str) -> bool:
+def video_exists_ok(conn: Any, youtube_str_id: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM video WHERE youtube_str_id=? AND status='ok'", (youtube_str_id,)
     ).fetchone()
     return row is not None
 
 
-def video_exists(conn, youtube_str_id: str) -> bool:
+def video_exists(conn: Any, youtube_str_id: str) -> bool:
     """True si la vidéo a déjà été scrapée, quel que soit son statut."""
     row = conn.execute(
         "SELECT 1 FROM video WHERE youtube_str_id=?", (youtube_str_id,)

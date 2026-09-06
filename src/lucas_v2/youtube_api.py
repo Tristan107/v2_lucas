@@ -1,12 +1,24 @@
+from __future__ import annotations
+
 import os
+import re
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from googleapiclient.discovery import build
 
 
-def _get_client():
+def _get_client() -> Any:
     api_key = os.environ["YOUTUBE_API_KEY"]
     return build("youtube", "v3", developerKey=api_key)
+
+
+_CHANNEL_REF_RE = re.compile(
+    r"(?:/channel/(UC[\w-]{20,})"          # 1 – /channel/UC…
+    r"|youtube\.com/@([^/?#]*)"             # 2 – youtube.com/@handle
+    r"|youtube\.com/(?:c|user)/([^/?#]*)"   # 3 – youtube.com/c/… or /user/…
+    r")"
+)
 
 
 def _extract_channel_ref(url_or_handle: str) -> tuple[str, str]:
@@ -15,24 +27,17 @@ def _extract_channel_ref(url_or_handle: str) -> tuple[str, str]:
     kind is 'id' (UCxxx), 'handle' (@xxx), or 'query' (fallback search).
     Accepts full URLs, bare @handles, or plain names.
     """
-    import re
-
     s = url_or_handle.strip().rstrip("/")
-
-    m = re.search(r"/channel/(UC[\w-]{20,})", s)
+    m = _CHANNEL_REF_RE.search(s)
     if m:
-        return "id", m.group(1)
-
-    m = re.search(r"youtube\.com/@([^/?#]+)", s)
-    if m:
-        return "handle", "@" + m.group(1)
+        if m.group(1):
+            return "id", m.group(1)
+        if m.group(2):
+            return "handle", "@" + m.group(2)
+        return "query", m.group(3)
 
     if s.startswith("@"):
         return "handle", s.split("/")[0].split("?")[0]
-
-    m = re.search(r"youtube\.com/(?:c|user)/([^/?#]+)", s)
-    if m:
-        return "query", m.group(1)
 
     if "youtube.com" not in s and "/" not in s and " " not in s:
         return "handle", "@" + s.lstrip("@")
@@ -40,31 +45,28 @@ def _extract_channel_ref(url_or_handle: str) -> tuple[str, str]:
     return "query", s
 
 
-def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
-    """Resolve channel URL or @Handle → (channel_id, title)."""
-    youtube = _get_client()
-    kind, value = _extract_channel_ref(url_or_handle)
+def _resolve_by_id(youtube: Any, value: str, url_or_handle: str) -> tuple[str, str]:
+    result = youtube.channels().list(part="snippet", id=value).execute()
+    items = result.get("items", [])
+    if not items:
+        raise ValueError(f"Chaîne introuvable : {url_or_handle}")
+    return items[0]["id"], items[0]["snippet"]["title"]
 
-    if kind == "id":
-        result = youtube.channels().list(part="snippet", id=value).execute()
+
+def _resolve_by_handle(youtube: Any, value: str) -> tuple[str, str] | None:
+    candidates = [value, value.lstrip("@")]
+    for cand in candidates:
+        try:
+            result = youtube.channels().list(part="snippet", forHandle=cand).execute()
+        except Exception:
+            continue
         items = result.get("items", [])
-        if not items:
-            raise ValueError(f"Chaîne introuvable : {url_or_handle}")
-        return items[0]["id"], items[0]["snippet"]["title"]
+        if items:
+            return items[0]["id"], items[0]["snippet"]["title"]
+    return None
 
-    if kind == "handle":
-        candidates = [value, value.lstrip("@")]
-        for cand in candidates:
-            try:
-                result = youtube.channels().list(part="snippet", forHandle=cand).execute()
-            except Exception:
-                continue
-            items = result.get("items", [])
-            if items:
-                return items[0]["id"], items[0]["snippet"]["title"]
 
-    # Fallback: search by name/handle
-    query = value.lstrip("@") if kind == "handle" else value
+def _resolve_by_search(youtube: Any, query: str) -> tuple[str, str]:
     result = youtube.search().list(
         part="snippet", q=query, type="channel", maxResults=5
     ).execute()
@@ -73,85 +75,99 @@ def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
         title = item.get("snippet", {}).get("title", "")
         if ch_id:
             return ch_id, title
+    raise ValueError(f"Chaîne introuvable : {query}")
 
-    raise ValueError(f"Chaîne introuvable : {url_or_handle}")
 
-
-def list_videos(channel_id: str, max_videos: int = 1,
-                since_days: int | None = None) -> list[dict]:
-    """List videos from a channel's uploads playlist.
-
-    Returns list of dicts: {video_id, title, upload_date, duration_s, youtube_str_id, published_at}.
-    """
+def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
+    """Resolve channel URL or @Handle → (channel_id, title)."""
     youtube = _get_client()
+    kind, value = _extract_channel_ref(url_or_handle)
 
-    ch_resp = youtube.channels().list(
-        part="contentDetails", id=channel_id
+    if kind == "id":
+        return _resolve_by_id(youtube, value, url_or_handle)
+
+    if kind == "handle":
+        result = _resolve_by_handle(youtube, value)
+        if result is not None:
+            return result
+
+    query = value.lstrip("@") if kind == "handle" else value
+    return _resolve_by_search(youtube, query)
+
+
+def _process_playlist_item(
+    item: dict[str, Any], cutoff: datetime | None,
+    video_ids: list[str], video_meta: dict[str, dict[str, str]],
+) -> bool:
+    """Process a single playlist item. Returns True if cutoff was reached."""
+    snippet = item.get("snippet", {})
+    vid = item.get("contentDetails", {}).get("videoId") or snippet.get("resourceId", {}).get("videoId")
+    if not vid:
+        return False
+
+    published_at = snippet.get("publishedAt", "")
+    if cutoff is not None and published_at:
+        try:
+            dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+            if dt < cutoff:
+                return True
+        except Exception:
+            pass
+
+    video_ids.append(vid)
+    video_meta[vid] = {
+        "title": snippet.get("title", ""),
+        "published_at": published_at,
+    }
+    return False
+
+
+def _fetch_next_page(
+    youtube: Any, uploads_id: str, batch_size: int,
+    next_token: str | None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    pl_resp = youtube.playlistItems().list(
+        part="snippet,contentDetails",
+        playlistId=uploads_id,
+        maxResults=min(batch_size, 50),
+        pageToken=next_token,
     ).execute()
-    items = ch_resp.get("items", [])
-    if not items:
-        return []
-    uploads_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    return pl_resp.get("items", []), pl_resp.get("nextPageToken")
 
-    video_ids = []
-    video_meta = {}
-    next_token = None
+
+def _fetch_playlist_videos(
+    youtube: Any, uploads_id: str, max_videos: int, cutoff: datetime | None,
+) -> tuple[list[str], dict[str, dict[str, str]]]:
+    video_ids: list[str] = []
+    video_meta: dict[str, dict[str, str]] = {}
+    next_token: str | None = None
     fetched = 0
-    cutoff = None
-    if since_days:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
-    batch_size = 50 if since_days else min(max_videos, 50)
+    batch_size = 50 if cutoff else min(max_videos, 50)
 
-    cutoff_reached = False
-    while True:
-        pl_resp = youtube.playlistItems().list(
-            part="snippet,contentDetails",
-            playlistId=uploads_id,
-            maxResults=min(batch_size, 50),
-            pageToken=next_token,
-        ).execute()
-
-        for item in pl_resp.get("items", []):
-            snippet = item.get("snippet", {})
-            vid = item.get("contentDetails", {}).get("videoId") or snippet.get("resourceId", {}).get("videoId")
-            if not vid:
-                continue
-
-            published_at = snippet.get("publishedAt", "")
-
-            if cutoff is not None and published_at:
-                try:
-                    dt = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-                    if dt < cutoff:
-                        # Playlist ordonnée anti-chrono : on arrête tout
-                        cutoff_reached = True
-                        break
-                except Exception:
-                    pass
-
-            video_ids.append(vid)
-            video_meta[vid] = {
-                "title": snippet.get("title", ""),
-                "published_at": published_at,
-            }
+    while fetched < max_videos:
+        items, next_token = _fetch_next_page(youtube, uploads_id, batch_size, next_token)
+        cutoff_reached = False
+        for item in items:
+            if _process_playlist_item(item, cutoff, video_ids, video_meta):
+                cutoff_reached = True
+                break
             fetched += 1
             if fetched >= max_videos:
                 break
-
-        if fetched >= max_videos or cutoff_reached:
+        if cutoff_reached:
             break
-        next_token = pl_resp.get("nextPageToken")
-        if not next_token:
+        if next_token is None:
             break
 
-    if not video_ids:
-        return []
+    return video_ids, video_meta
 
-    batch_ids = video_ids[:max_videos]
-    results = []
-    # videos.list accepte max 50 ids par appel → découper par lots
-    for i in range(0, len(batch_ids), 50):
-        lot = batch_ids[i:i + 50]
+
+def _fetch_video_details(
+    youtube: Any, video_ids: list[str], video_meta: dict[str, dict[str, str]],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for i in range(0, len(video_ids), 50):
+        lot = video_ids[i:i + 50]
         vid_resp = youtube.videos().list(
             part="contentDetails,snippet",
             id=",".join(lot),
@@ -168,7 +184,34 @@ def list_videos(channel_id: str, max_videos: int = 1,
                 "youtube_str_id": vid_id,
                 "published_at": video_meta.get(vid_id, {}).get("published_at", ""),
             })
+    return results
 
+
+def list_videos(channel_id: str, max_videos: int = 1,
+                since_days: int | None = None) -> list[dict[str, Any]]:
+    """List videos from a channel's uploads playlist.
+
+    Returns list of dicts: {video_id, title, upload_date, duration_s, youtube_str_id, published_at}.
+    """
+    youtube = _get_client()
+
+    ch_resp = youtube.channels().list(
+        part="contentDetails", id=channel_id
+    ).execute()
+    items = ch_resp.get("items", [])
+    if not items:
+        return []
+    uploads_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+    cutoff = None
+    if since_days:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
+
+    video_ids, video_meta = _fetch_playlist_videos(youtube, uploads_id, max_videos, cutoff)
+    if not video_ids:
+        return []
+
+    results = _fetch_video_details(youtube, video_ids[:max_videos], video_meta)
     results.sort(key=lambda x: x["published_at"], reverse=True)
     return results[:max_videos]
 
