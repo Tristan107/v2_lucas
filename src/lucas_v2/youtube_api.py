@@ -8,7 +8,7 @@ from typing import Any
 from googleapiclient.discovery import build  # pyright: ignore[reportMissingModuleSource, reportUnknownVariableType]
 
 
-def _get_client() -> Any:
+def get_client() -> Any:
     api_key: str = os.environ["YOUTUBE_API_KEY"]
     return build("youtube", "v3", developerKey=api_key)  # pyright: ignore[reportUnknownVariableType]
 
@@ -21,7 +21,7 @@ _CHANNEL_REF_RE: re.Pattern[str] = re.compile(
 )
 
 
-def _extract_channel_ref(url_or_handle: str) -> tuple[str, str]:
+def extract_channel_ref(url_or_handle: str) -> tuple[str, str]:
     """Parse channel URL/handle → (kind, value).
 
     kind is 'id' (UCxxx), 'handle' (@xxx), or 'query' (fallback search).
@@ -80,10 +80,10 @@ def _resolve_by_search(youtube: Any, query: str) -> tuple[str, str]:
 
 def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
     """Resolve channel URL or @Handle → (channel_id, title)."""
-    youtube: Any = _get_client()
+    youtube: Any = get_client()
     kind: str
     value: str
-    kind, value = _extract_channel_ref(url_or_handle)
+    kind, value = extract_channel_ref(url_or_handle)
 
     if kind == "id":
         return _resolve_by_id(youtube, value, url_or_handle)
@@ -97,7 +97,7 @@ def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
     return _resolve_by_search(youtube, query)
 
 
-def _process_playlist_item(
+def process_playlist_item(
     item: dict[str, Any], cutoff: datetime | None,
     video_ids: list[str], video_meta: dict[str, dict[str, str]],
 ) -> bool:
@@ -124,6 +124,10 @@ def _process_playlist_item(
     return False
 
 
+def _reached_limit(fetched: int, max_videos: int | None) -> bool:
+    return max_videos is not None and fetched >= max_videos
+
+
 def _fetch_next_page(
     youtube: Any, uploads_id: str, batch_size: int,
     next_token: str | None,
@@ -138,23 +142,23 @@ def _fetch_next_page(
 
 
 def _fetch_playlist_videos(
-    youtube: Any, uploads_id: str, max_videos: int, cutoff: datetime | None,
+    youtube: Any, uploads_id: str, max_videos: int | None, cutoff: datetime | None,
 ) -> tuple[list[str], dict[str, dict[str, str]]]:
     video_ids: list[str] = []
     video_meta: dict[str, dict[str, str]] = {}
     next_token: str | None = None
     fetched = 0
-    batch_size = 50 if cutoff else min(max_videos, 50)
+    batch_size = 50 if cutoff is not None or max_videos is None else min(max_videos, 50)
 
-    while fetched < max_videos:
+    while not _reached_limit(fetched, max_videos):
         items, next_token = _fetch_next_page(youtube, uploads_id, batch_size, next_token)
         cutoff_reached = False
         for item in items:
-            if _process_playlist_item(item, cutoff, video_ids, video_meta):
+            if process_playlist_item(item, cutoff, video_ids, video_meta):
                 cutoff_reached = True
                 break
             fetched += 1
-            if fetched >= max_videos:
+            if _reached_limit(fetched, max_videos):
                 break
         if cutoff_reached:
             break
@@ -177,11 +181,11 @@ def _fetch_video_details(
         for v in vid_resp.get("items", []):
             vid_id = v["id"]
             duration_iso = v.get("contentDetails", {}).get("duration", "")
-            duration_s = _parse_iso_duration(duration_iso)
+            duration_s = parse_iso_duration(duration_iso)
             results.append({
                 "video_id": vid_id,
                 "title": v.get("snippet", {}).get("title", ""),
-                "upload_date": _iso_to_yyyymmdd(video_meta.get(vid_id, {}).get("published_at", "")),
+                "upload_date": iso_to_yyyymmdd(video_meta.get(vid_id, {}).get("published_at", "")),
                 "duration_s": duration_s,
                 "youtube_str_id": vid_id,
                 "published_at": video_meta.get(vid_id, {}).get("published_at", ""),
@@ -189,13 +193,13 @@ def _fetch_video_details(
     return results
 
 
-def list_videos(channel_id: str, max_videos: int = 1,
+def list_videos(channel_id: str, max_videos: int | None = 1,
                 since_days: int | None = None) -> list[dict[str, Any]]:
     """List videos from a channel's uploads playlist.
 
     Returns list of dicts: {video_id, title, upload_date, duration_s, youtube_str_id, published_at}.
     """
-    youtube: Any = _get_client()
+    youtube: Any = get_client()
 
     ch_resp: dict[str, Any] = youtube.channels().list(
         part="contentDetails", id=channel_id
@@ -206,7 +210,7 @@ def list_videos(channel_id: str, max_videos: int = 1,
     uploads_id: str = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
     cutoff: datetime | None = None
-    if since_days:
+    if since_days is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
 
     video_ids: list[str]
@@ -220,7 +224,7 @@ def list_videos(channel_id: str, max_videos: int = 1,
     return results[:max_videos]
 
 
-def _parse_iso_duration(iso: str) -> int | None:
+def parse_iso_duration(iso: str) -> int | None:
     """PT1H2M3S → 3723 seconds."""
     if not iso or not iso.startswith("PT"):
         return None
@@ -242,7 +246,7 @@ def _parse_iso_duration(iso: str) -> int | None:
     return total if total > 0 else None
 
 
-def _iso_to_yyyymmdd(iso: str) -> str | None:
+def iso_to_yyyymmdd(iso: str) -> str | None:
     if not iso:
         return None
     try:

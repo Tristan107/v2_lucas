@@ -99,3 +99,21 @@ def test_channel_spec_frozen() -> None:
     assert spec.url == "https://yt.com/ch"
     assert spec.owner is None
     assert spec.orientation is None
+
+
+def test_load_channels_max_videos_null(tmp_path: Path) -> None:
+    yaml_content = """\
+defaults:
+  max_videos:
+  since_days: 30
+  lang: fr
+channels:
+  - url: https://youtube.com/@Channel1
+"""
+    config_file = tmp_path / "channels.yaml"
+    config_file.write_text(yaml_content, encoding="utf-8")
+
+    channels = load_channels(str(config_file))
+    assert len(channels) == 1
+    assert channels[0].max_videos is None
+    assert channels[0].since_days == 30

@@ -9,7 +9,7 @@ import yaml
 @dataclass(frozen=True, slots=True)
 class ChannelSpec:
     url: str
-    max_videos: int
+    max_videos: int | None
     since_days: int | None
     lang: str
     owner: str | None = None
@@ -21,7 +21,7 @@ def load_channels(path: str) -> list[ChannelSpec]:
         data: dict[str, Any] = yaml.safe_load(f)
 
     defaults: dict[str, Any] = data.get("defaults", {})
-    d_max_videos: int = defaults.get("max_videos", 1)
+    d_max_videos: int | None = defaults.get("max_videos", 1)
     d_since_days: int | None = defaults.get("since_days")
     d_lang: str = defaults.get("lang", "fr")
     d_owner: str | None = defaults.get("owner")

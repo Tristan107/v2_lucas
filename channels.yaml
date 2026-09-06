@@ -1,6 +1,6 @@
 defaults:
-  max_videos: 2
-  since_days: null
+  max_videos: null
+  since_days: 60
   lang: "fr"
 channels:
   # Extrême gauche

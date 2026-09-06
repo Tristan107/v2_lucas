@@ -6,9 +6,9 @@ from lucas_v2.schema import init_schema
 
 
 def test_load_schema_returns_sql() -> None:
-    from lucas_v2.schema import _load_schema
+    from lucas_v2.schema import load_schema
 
-    sql = _load_schema()
+    sql = load_schema()
     assert "CREATE TABLE" in sql
     assert "channel" in sql
 

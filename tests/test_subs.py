@@ -4,11 +4,14 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from lucas_v2.subs import (
+    RETRY_DELAYS_S,
     RateLimitedError,
-    _base_opts,
-    _choose_track,
-    _extract_meta,
-    _run_with_retry,
+    backoff_delay,
+    base_opts,
+    choose_track,
+    extract_meta,
+    is_retryable,
+    run_with_retry,
     download_srt,
 )
 
@@ -21,40 +24,40 @@ class TestChooseTrack:
     def test_fr_manual_priority(self) -> None:
         manual = {"fr", "en", "es"}
         auto: set[str] = set()
-        assert _choose_track(manual, auto) == ("fr", "manual")
+        assert choose_track(manual, auto) == ("fr", "manual")
 
     def test_fr_orig_manual(self) -> None:
         manual = {"fr-orig", "en"}
         auto: set[str] = set()
-        assert _choose_track(manual, auto) == ("fr-orig", "manual")
+        assert choose_track(manual, auto) == ("fr-orig", "manual")
 
     def test_fr_auto(self) -> None:
         manual: set[str] = set()
         auto = {"fr", "en"}
-        assert _choose_track(manual, auto) == ("fr", "auto")
+        assert choose_track(manual, auto) == ("fr", "auto")
 
     def test_fr_orig_auto(self) -> None:
         manual: set[str] = set()
         auto = {"fr-orig", "en"}
-        assert _choose_track(manual, auto) == ("fr-orig", "auto")
+        assert choose_track(manual, auto) == ("fr-orig", "auto")
 
     def test_no_french(self) -> None:
         manual = {"en", "es"}
         auto = {"de"}
-        assert _choose_track(manual, auto) == (None, None)
+        assert choose_track(manual, auto) == (None, None)
 
     def test_manual_preferred_over_auto(self) -> None:
         manual = {"fr"}
         auto = {"fr", "fr-orig"}
-        assert _choose_track(manual, auto) == ("fr", "manual")
+        assert choose_track(manual, auto) == ("fr", "manual")
 
     def test_fr_orig_manual_beats_fr_auto(self) -> None:
         manual = {"fr-orig"}
         auto = {"fr"}
-        assert _choose_track(manual, auto) == ("fr-orig", "manual")
+        assert choose_track(manual, auto) == ("fr-orig", "manual")
 
     def test_empty_sets(self) -> None:
-        assert _choose_track(set(), set()) == (None, None)
+        assert choose_track(set(), set()) == (None, None)
 
 
 class TestExtractMeta:
@@ -66,7 +69,7 @@ class TestExtractMeta:
             "channel_url": "https://youtube.com/@ch",
             "id": "vid123",
         }
-        meta = _extract_meta(info)
+        meta = extract_meta(info)
         assert meta["title"] == "My Video"
         assert meta["upload_date"] == "20250115"
         assert meta["duration"] == 300
@@ -74,7 +77,7 @@ class TestExtractMeta:
         assert meta["video_id"] == "vid123"
 
     def test_missing_fields(self) -> None:
-        meta = _extract_meta({})
+        meta = extract_meta({})
         assert meta["title"] is None
         assert meta["upload_date"] is None
         assert meta["duration"] is None
@@ -84,12 +87,36 @@ class TestExtractMeta:
 
 class TestBaseOpts:
     def test_returns_dict(self) -> None:
-        opts = _base_opts("/tmp/test")
+        opts = base_opts("/tmp/test")
         assert isinstance(opts, dict)
         assert opts["skip_download"] is True
         assert opts["quiet"] is True
         assert opts["retries"] == 3
+        assert opts["extractor_retries"] == 2
+        assert opts["fragment_retries"] == 2
+        assert opts["retry_sleep"] == {"extractor": 30}
         assert "/tmp/test" in opts["outtmpl"]
+
+
+class TestIsRetryable:
+    def test_429is_retryable(self) -> None:
+        assert is_retryable(Exception("HTTP Error 429")) is True
+
+    def test_404_not_retryable(self) -> None:
+        assert is_retryable(Exception("HTTP Error 404")) is False
+
+    def test_empty_not_retryable(self) -> None:
+        assert is_retryable(Exception("")) is False
+
+
+class TestBackoffDelay:
+    def test_uses_retry_after_header(self) -> None:
+        delay = backoff_delay(0, Exception("Retry-After: 45"))
+        assert delay == 45.0
+
+    def test_uses_table_when_no_header(self) -> None:
+        delay = backoff_delay(1, Exception("429"))
+        assert RETRY_DELAYS_S[1] <= delay <= RETRY_DELAYS_S[1] + 5.0
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +125,7 @@ class TestBaseOpts:
 
 class TestDownloadSrt:
     @patch("lucas_v2.subs.shutil.rmtree")
-    @patch("lucas_v2.subs._do_download")
+    @patch("lucas_v2.subs.do_download")
     @patch("lucas_v2.subs.tempfile.mkdtemp", return_value="/tmp/testdir")
     def test_returns_do_download_result(
         self, mock_mkdtemp: MagicMock, mock_do: MagicMock, mock_rmtree: MagicMock
@@ -109,7 +136,7 @@ class TestDownloadSrt:
         mock_rmtree.assert_called_once()
 
     @patch("lucas_v2.subs.shutil.rmtree")
-    @patch("lucas_v2.subs._do_download")
+    @patch("lucas_v2.subs.do_download")
     @patch("lucas_v2.subs.tempfile.mkdtemp", return_value="/tmp/testdir")
     def test_cleansup_on_error(
         self, mock_mkdtemp: MagicMock, mock_do: MagicMock, mock_rmtree: MagicMock
@@ -128,14 +155,14 @@ class TestRunWithRetry:
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        _run_with_retry({}, "https://example.com")
+        run_with_retry({}, "https://example.com")
         mock_ydl.extract_info.assert_called_once()
 
-    @patch("lucas_v2.subs.time.sleep")
-    @patch("lucas_v2.subs._retry_download")
+    @patch("lucas_v2.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
     @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
-    def test_429_triggers_retry(
-        self, mock_ydl_cls: MagicMock, mock_retry: MagicMock, mock_sleep: MagicMock
+    def test_429_retries_3x(
+        self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
     ) -> None:
         from yt_dlp.utils import DownloadError
 
@@ -143,54 +170,35 @@ class TestRunWithRetry:
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 429")
-        _run_with_retry({}, "https://example.com")
-        mock_sleep.assert_called_once_with(60)
-        mock_retry.assert_called_once()
-
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
-    def test_non_429_error_raises(self, mock_ydl_cls: MagicMock) -> None:
-        from yt_dlp.utils import DownloadError
-
-        mock_ydl = MagicMock()
-        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
-        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 404")
         try:
-            _run_with_retry({}, "https://example.com")
+            run_with_retry({}, "https://example.com")
             assert False, "Should have raised"
-        except DownloadError:
+        except RateLimitedError:
             pass
+        assert mock_sleep.call_count == 2
+        mock_ydl.extract_info.assert_called()
 
-
-class TestRetryDownload:
+    @patch("lucas_v2.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
     @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
-    def test_success(self, mock_ydl_cls: MagicMock) -> None:
-        from lucas_v2.subs import _retry_download
-
-        mock_ydl = MagicMock()
-        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
-        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        _retry_download({}, "https://example.com")
-        mock_ydl.extract_info.assert_called_once()
-
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
-    def test_429_raises_rate_limited(self, mock_ydl_cls: MagicMock) -> None:
-        from lucas_v2.subs import _retry_download
+    def test_429_retry_after_header(
+        self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
+    ) -> None:
         from yt_dlp.utils import DownloadError
 
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 429")
+        mock_ydl.extract_info.side_effect = DownloadError("429 Retry-After: 45")
         try:
-            _retry_download({}, "https://example.com")
+            run_with_retry({}, "https://example.com")
             assert False, "Should have raised"
-        except RateLimitedError as e:
-            assert "Rate-limit" in str(e)
+        except RateLimitedError:
+            pass
+        mock_sleep.assert_called_with(45.0)
 
     @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
     def test_non_429_error_raises(self, mock_ydl_cls: MagicMock) -> None:
-        from lucas_v2.subs import _retry_download
         from yt_dlp.utils import DownloadError
 
         mock_ydl = MagicMock()
@@ -198,7 +206,7 @@ class TestRetryDownload:
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 404")
         try:
-            _retry_download({}, "https://example.com")
+            run_with_retry({}, "https://example.com")
             assert False, "Should have raised"
         except DownloadError:
             pass

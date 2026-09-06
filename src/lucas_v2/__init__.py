@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 import sys
 import time
@@ -14,15 +15,21 @@ from lucas_v2.config import ChannelSpec
 
 logger: logging.Logger = logging.getLogger("lucas_v2")
 
-INTER_VIDEO_DELAY_S: int = 3
+INTER_VIDEO_DELAY_S: int = 10
+INTER_JITTER_S: float = 5.0
 _DONE_MSG: str = "Terminé."
+
+
+def paced_sleep(base: int | float, jitter: float = INTER_JITTER_S) -> None:
+    time.sleep(base + random.uniform(0, jitter))
+
 
 _VIDEO_URL_RE: re.Pattern[str] = re.compile(
     r"(?:youtube\.com/watch\?.*?v=|youtu\.be/)([\w-]{11})"
 )
 
 
-def _extract_video_id(url: str) -> str | None:
+def extract_video_id(url: str) -> str | None:
     """Extract 11-char video ID from a YouTube URL."""
     m = _VIDEO_URL_RE.search(url)
     return m.group(1) if m else None
@@ -38,7 +45,7 @@ def cli() -> None:
     """Lucas v2 - YouTube transcript ingestion tool."""
 
 
-def _resolve_channel(spec: ChannelSpec, conn: Any) -> tuple[int, str, str] | None:
+def resolve_channel(spec: ChannelSpec, conn: Any) -> tuple[int, str, str] | None:
     from lucas_v2.db import upsert_channel
     from lucas_v2.youtube_api import resolve_channel_id
 
@@ -53,7 +60,7 @@ def _resolve_channel(spec: ChannelSpec, conn: Any) -> tuple[int, str, str] | Non
         return None
 
 
-def _fetch_videos(channel_id: str, spec: ChannelSpec) -> list[dict[str, Any]]:
+def fetch_videos(channel_id: str, spec: ChannelSpec) -> list[dict[str, Any]]:
     from lucas_v2.youtube_api import list_videos
 
     try:
@@ -63,7 +70,7 @@ def _fetch_videos(channel_id: str, spec: ChannelSpec) -> list[dict[str, Any]]:
         return []
 
 
-def _download_and_store(
+def download_and_store(
     vid: dict[str, Any],
     channel_row_id: int,
     conn: Any,
@@ -116,7 +123,7 @@ def _download_and_store(
     conn.commit()
 
 
-def _process_videos(
+def process_videos(
     videos: list[dict[str, Any]], channel_row_id: int,
     conn: Any, force: bool, dry_run: bool, tok: Any,
     force_id: str | None = None,
@@ -145,10 +152,10 @@ def _process_videos(
             continue
 
         if i > 0:
-            time.sleep(INTER_VIDEO_DELAY_S)
+            paced_sleep(INTER_VIDEO_DELAY_S)
 
         try:
-            _download_and_store(vid, channel_row_id, conn, is_new, tok)
+            download_and_store(vid, channel_row_id, conn, is_new, tok)
         except RateLimitedError:
             logger.warning(
                 "Rate-limit persistant : ingestion arrêtée. "
@@ -160,7 +167,7 @@ def _process_videos(
     return new_count, existing_count
 
 
-def _print_dry_run_summary(results: list[tuple[str, str | None, int, int]]) -> None:
+def print_dry_run_summary(results: list[tuple[str, str | None, int, int]]) -> None:
     """Affiche un tableau récapitulatif en mode dry-run."""
     logger.info("\n--- dry-run summary ---")
     total_existing: int = 0
@@ -208,7 +215,7 @@ def ingest(config_path: str, dry_run: bool, force_all: bool, video_url: str | No
     logger.info("Tokenizer: %s (max=%d)", tok_name, MAX_CONTENT_TOKENS)
 
     if video_url is not None:
-        _ingest_single_video(video_url, channels, conn, tok, dry_run)
+        ingest_single_video(video_url, channels, conn, tok, dry_run)
         return
 
     if force_all and not dry_run:
@@ -221,34 +228,34 @@ def ingest(config_path: str, dry_run: bool, force_all: bool, video_url: str | No
 
     for spec in channels:
         logger.info("--- %s (%s) ---", spec.url, spec.owner)
-        result: tuple[int, str, str] | None = _resolve_channel(spec, conn)
+        result: tuple[int, str, str] | None = resolve_channel(spec, conn)
         if result is None:
             continue
         channel_row_id: int
         yt_channel_id: str
         channel_row_id, yt_channel_id, _ = result
 
-        videos: list[dict[str, Any]] = _fetch_videos(yt_channel_id, spec)
+        videos: list[dict[str, Any]] = fetch_videos(yt_channel_id, spec)
         logger.info("          Videos matching the criteria in channel.yaml : %d", len(videos))
-        new_count, existing_count = _process_videos(
+        new_count, existing_count = process_videos(
             videos, channel_row_id, conn, force_all, dry_run, tok,
         )
         if dry_run:
             dry_run_results.append((spec.url, spec.owner, new_count, existing_count))
 
     if dry_run and dry_run_results:
-        _print_dry_run_summary(dry_run_results)
+        print_dry_run_summary(dry_run_results)
 
     logger.info(_DONE_MSG)
 
 
-def _ingest_single_video(
+def ingest_single_video(
     video_url: str, channels: list[ChannelSpec], conn: Any, tok: Any, dry_run: bool,
 ) -> None:
     """Handle --url: re-download a specific video by its YouTube URL."""
     from lucas_v2.db import find_video_channel, get_channel_url
 
-    vid_id: str | None = _extract_video_id(video_url)
+    vid_id: str | None = extract_video_id(video_url)
     if vid_id is None:
         logger.error("URL invalide, impossible d'extraire l'ID : %s", video_url)
         sys.exit(1)
@@ -262,14 +269,14 @@ def _ingest_single_video(
         channel_url: str | None = get_channel_url(conn, channel_row_id_db)
         logger.info("Vidéo %s trouvée en base (chaîne : %s), re-téléchargement...", vid_id, channel_url)
 
-        _fetch_and_download_single(vid_id, channel_row_id_db, conn, tok, dry_run)
+        fetch_and_download_single(vid_id, channel_row_id_db, conn, tok, dry_run)
         logger.info(_DONE_MSG)
         return
 
     logger.info("Vidéo %s absente de la base, recherche dans les chaînes configurées...", vid_id)
     for spec in channels:
         logger.info("--- %s ---", spec.url)
-        result: tuple[int, str, str] | None = _resolve_channel(spec, conn)
+        result: tuple[int, str, str] | None = resolve_channel(spec, conn)
         if result is None:
             continue
         channel_row_id_c: int
@@ -277,7 +284,7 @@ def _ingest_single_video(
         _channel_title_c: str
         channel_row_id_c, yt_channel_id_c, _channel_title_c = result
 
-        videos_c: list[dict[str, Any]] = _fetch_videos(yt_channel_id_c, spec)
+        videos_c: list[dict[str, Any]] = fetch_videos(yt_channel_id_c, spec)
         match: dict[str, Any] | None = next(
             (v for v in videos_c if str(v["youtube_str_id"]) == vid_id), None,
         )
@@ -286,7 +293,7 @@ def _ingest_single_video(
             if dry_run:
                 logger.info("     [dry-run] Re-téléchargement de %s", vid_id)
             else:
-                _download_and_store(match, channel_row_id_c, conn, False, tok)
+                download_and_store(match, channel_row_id_c, conn, False, tok)
             logger.info(_DONE_MSG)
             return
 
@@ -294,14 +301,14 @@ def _ingest_single_video(
     sys.exit(1)
 
 
-def _fetch_and_download_single(
+def fetch_and_download_single(
     vid_id: str, channel_row_id: int,
     conn: Any, tok: Any, dry_run: bool,
 ) -> None:
     """Fetch video metadata from YouTube API and download/store it."""
-    from lucas_v2.youtube_api import _get_client  # pyright: ignore[reportPrivateUsage]
+    from lucas_v2.youtube_api import get_client
 
-    youtube: Any = _get_client()
+    youtube: Any = get_client()
     vid_resp: Any = youtube.videos().list(
         part="contentDetails,snippet", id=vid_id,
     ).execute()
@@ -323,4 +330,4 @@ def _fetch_and_download_single(
         logger.info("     [dry-run] Re-téléchargement de %s", vid_id)
         return
 
-    _download_and_store(vid_data, channel_row_id, conn, False, tok)
+    download_and_store(vid_data, channel_row_id, conn, False, tok)
