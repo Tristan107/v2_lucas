@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
 
 from lucas_v2.chunking import Chunk
 from lucas_v2.db import (
+    DbConn,
     find_video_channel,
     get_channel_url,
     replace_chunks,
@@ -191,3 +193,101 @@ def test_search_chunks() -> None:
     assert len(results) >= 1
     assert results[0]["text"] == "bonjour le monde"
     assert results[0]["youtube_id"] == "vid1"
+
+
+# ---------------------------------------------------------------------------
+# DbConn auto-reconnection
+# ---------------------------------------------------------------------------
+
+class TestDbConn:
+    def test_execute_reconnects_on_stream_not_found(self) -> None:
+        mock_conn1 = MagicMock()
+        mock_conn2 = MagicMock()
+        mock_conn1.execute.side_effect = ValueError("stream not found: abc123")
+        fake_result = MagicMock()
+        mock_conn2.execute.return_value = fake_result
+
+        wrapper = DbConn(mock_conn1)
+
+        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+            result = wrapper.execute("SELECT 1", ())
+
+        mock_conn2.execute.assert_called_once_with("SELECT 1", ())
+        assert result is fake_result
+
+    def test_execute_raises_other_valueerrors(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = ValueError("some other error")
+        wrapper = DbConn(mock_conn)
+
+        try:
+            wrapper.execute("SELECT 1")
+            assert False, "Should have raised"
+        except ValueError as e:
+            assert "some other error" in str(e)
+
+    def test_commit_reconnects_on_stream_not_found(self) -> None:
+        mock_conn1 = MagicMock()
+        mock_conn2 = MagicMock()
+        mock_conn1.commit.side_effect = ValueError("stream not found: xyz")
+
+        wrapper = DbConn(mock_conn1)
+
+        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+            wrapper.commit()
+
+        mock_conn2.commit.assert_called_once()
+
+    def test_commit_raises_other_valueerrors(self) -> None:
+        mock_conn = MagicMock()
+        mock_conn.commit.side_effect = ValueError("disk full")
+        wrapper = DbConn(mock_conn)
+
+        try:
+            wrapper.commit()
+            assert False, "Should have raised"
+        except ValueError as e:
+            assert "disk full" in str(e)
+
+    def test_executescript_reconnects_on_stream_not_found(self) -> None:
+        mock_conn1 = MagicMock()
+        mock_conn2 = MagicMock()
+        mock_conn1.executescript.side_effect = ValueError("stream not found: def456")
+
+        wrapper = DbConn(mock_conn1)
+
+        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+            wrapper.executescript("CREATE TABLE t (id INT)")
+
+        mock_conn2.executescript.assert_called_once_with("CREATE TABLE t (id INT)")
+
+    def test_rollback_reconnects_on_stream_not_found(self) -> None:
+        mock_conn1 = MagicMock()
+        mock_conn2 = MagicMock()
+        mock_conn1.rollback.side_effect = ValueError("stream not found: ghi789")
+
+        wrapper = DbConn(mock_conn1)
+
+        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+            wrapper.rollback()
+
+        # Rollback after stream loss just reconnects (no retry needed, transaction is dead)
+        mock_conn2.rollback.assert_not_called()
+
+    def test_execute_reconnects_only_once(self) -> None:
+        mock_conn1 = MagicMock()
+        mock_conn2 = MagicMock()
+        mock_conn1.execute.side_effect = ValueError("stream not found: once")
+        mock_conn2.execute.side_effect = ValueError("stream not found: again")
+
+        wrapper = DbConn(mock_conn1)
+
+        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+            try:
+                wrapper.execute("SELECT 1")
+                assert False, "Should have raised"
+            except ValueError as e:
+                assert "stream not found: again" in str(e)
+
+        # _raw_connect called only once (no infinite loop)
+        pass
