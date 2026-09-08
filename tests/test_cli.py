@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from lucas_v2 import (
@@ -15,6 +16,7 @@ from lucas_v2 import (
     paced_sleep,
 )
 from lucas_v2.config import ChannelSpec
+from lucas_v2.subs import AbortIngestion, RateLimitState
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +119,7 @@ class TestProcessVideos:
         mock_exists.return_value = False
         conn = MagicMock()
         videos = [{"youtube_str_id": "v1", "title": "T"}]
-        new, existing = process_videos(videos, 1, conn, force=False, dry_run=True, tok=None)
+        new, existing = process_videos(videos, 1, conn, force=False, dry_run=True, tok=None, rate_state=RateLimitState())
         assert new == 1
         assert existing == 0
 
@@ -128,7 +130,7 @@ class TestProcessVideos:
         mock_exists.return_value = True
         conn = MagicMock()
         videos = [{"youtube_str_id": "v1", "title": "T"}]
-        new, existing = process_videos(videos, 1, conn, force=False, dry_run=True, tok=None)
+        new, existing = process_videos(videos, 1, conn, force=False, dry_run=True, tok=None, rate_state=RateLimitState())
         assert new == 0
         assert existing == 1
 
@@ -139,7 +141,7 @@ class TestProcessVideos:
         mock_exists.return_value = True
         conn = MagicMock()
         videos = [{"youtube_str_id": "v1", "title": "T"}]
-        process_videos(videos, 1, conn, force=False, dry_run=False, tok=None)
+        process_videos(videos, 1, conn, force=False, dry_run=False, tok=None, rate_state=RateLimitState())
 
     @patch("lucas_v2.download_and_store")
     @patch("lucas_v2.db.video_exists")
@@ -151,7 +153,7 @@ class TestProcessVideos:
         mock_exists.return_value = True
         conn = MagicMock()
         videos = [{"youtube_str_id": "v1", "title": "T"}]
-        process_videos(videos, 1, conn, force=True, dry_run=False, tok=None)
+        process_videos(videos, 1, conn, force=True, dry_run=False, tok=None, rate_state=RateLimitState())
         mock_dl.assert_called_once()
 
     @patch("lucas_v2.paced_sleep")
@@ -167,26 +169,96 @@ class TestProcessVideos:
             {"youtube_str_id": "v1", "title": "T1"},
             {"youtube_str_id": "v2", "title": "T2"},
         ]
-        process_videos(videos, 1, conn, force=False, dry_run=False, tok=None)
+        process_videos(videos, 1, conn, force=False, dry_run=False, tok=None, rate_state=RateLimitState())
         mock_sleep.assert_called_once_with(INTER_VIDEO_DELAY_S)
 
-    @patch("lucas_v2.paced_sleep")
     @patch("lucas_v2.download_and_store")
     @patch("lucas_v2.db.video_exists", return_value=False)
-    def test_break_on_rate_limited(
-        self, mock_exists: MagicMock, mock_dl: MagicMock, mock_sleep: MagicMock
+    def test_rate_limited_continues_to_next(
+        self, mock_exists: MagicMock, mock_dl: MagicMock
     ) -> None:
         from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
-        from lucas_v2.subs import RateLimitedError
 
-        mock_dl.side_effect = RateLimitedError("429")
         conn = MagicMock()
         videos = [
             {"youtube_str_id": "v1", "title": "T1"},
             {"youtube_str_id": "v2", "title": "T2"},
         ]
-        process_videos(videos, 1, conn, force=False, dry_run=False, tok=None)
+        process_videos(videos, 1, conn, force=False, dry_run=False, tok=None, rate_state=RateLimitState())
+        assert mock_dl.call_count == 2
+
+    @patch("lucas_v2.download_and_store")
+    @patch("lucas_v2.db.video_exists", return_value=False)
+    def test_abort_ingestion_propagates(
+        self, mock_exists: MagicMock, mock_dl: MagicMock
+    ) -> None:
+        from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
+
+        mock_dl.side_effect = AbortIngestion("6x429")
+        conn = MagicMock()
+        videos = [
+            {"youtube_str_id": "v1", "title": "T1"},
+            {"youtube_str_id": "v2", "title": "T2"},
+        ]
+        with pytest.raises(AbortIngestion):
+            process_videos(videos, 1, conn, force=False, dry_run=False, tok=None, rate_state=RateLimitState())
         assert mock_dl.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# download_and_store
+# ---------------------------------------------------------------------------
+
+class TestDownloadAndStore:
+    @patch("lucas_v2.db.upsert_video")
+    @patch("lucas_v2.subs.download_srt")
+    def test_rate_limited_no_upsert(
+        self, mock_srt: MagicMock, mock_upsert: MagicMock
+    ) -> None:
+        from lucas_v2 import download_and_store  # pyright: ignore[reportPrivateUsage]
+        from lucas_v2.subs import RateLimitedError
+
+        mock_srt.side_effect = RateLimitedError("429")
+        conn = MagicMock()
+        vid = {"youtube_str_id": "v1", "title": "T"}
+        rate_state = RateLimitState()
+        download_and_store(vid, 1, conn, False, None, rate_state)
+        mock_upsert.assert_not_called()
+        conn.commit.assert_not_called()
+
+    @patch("lucas_v2.db.upsert_video")
+    @patch("lucas_v2.subs.download_srt")
+    def test_abort_ingestion_propagates_no_upsert(
+        self, mock_srt: MagicMock, mock_upsert: MagicMock
+    ) -> None:
+        from lucas_v2 import download_and_store  # pyright: ignore[reportPrivateUsage]
+
+        mock_srt.side_effect = AbortIngestion("6x429")
+        conn = MagicMock()
+        vid = {"youtube_str_id": "v1", "title": "T"}
+        rate_state = RateLimitState()
+        with pytest.raises(AbortIngestion):
+            download_and_store(vid, 1, conn, False, None, rate_state)
+        mock_upsert.assert_not_called()
+        conn.commit.assert_not_called()
+
+    @patch("lucas_v2.chunking.chunk_cues")
+    @patch("lucas_v2.srt.parse_srt", return_value=[])
+    @patch("lucas_v2.db.replace_chunks")
+    @patch("lucas_v2.db.upsert_video", return_value=42)
+    @patch("lucas_v2.subs.download_srt", return_value=("srt text", "fr", "manual", {}))
+    def test_success_no_abort(
+        self, mock_srt: MagicMock, mock_upsert: MagicMock,
+        mock_replace: MagicMock, mock_parse: MagicMock, mock_chunk: MagicMock,
+    ) -> None:
+        from lucas_v2 import download_and_store  # pyright: ignore[reportPrivateUsage]
+
+        conn = MagicMock()
+        vid = {"youtube_str_id": "v1", "title": "T"}
+        rate_state = RateLimitState()
+        download_and_store(vid, 1, conn, True, None, rate_state)
+        mock_upsert.assert_called_once()
+        conn.commit.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -250,3 +322,36 @@ channels:
         runner = CliRunner()
         result = runner.invoke(ingest, ["-c", str(config_file), "--dry-run"])
         assert result.exit_code == 0
+
+    @patch("lucas_v2.process_videos", side_effect=AbortIngestion("6x429"))
+    @patch("lucas_v2.fetch_videos", return_value=[{"youtube_str_id": "v1", "title": "V1"}])
+    @patch("lucas_v2.resolve_channel", return_value=(1, "UC123", "Test"))
+    @patch("lucas_v2.chunking.get_tokenizer", return_value=None)
+    @patch("lucas_v2.schema.init_schema")
+    @patch("lucas_v2.db.connect")
+    @patch("lucas_v2.logging_config.setup_logging")
+    def test_ingest_exits_on_abort(
+        self,
+        mock_logging: MagicMock,
+        mock_connect: MagicMock,
+        mock_schema: MagicMock,
+        mock_tok: MagicMock,
+        mock_resolve: MagicMock,
+        mock_fetch: MagicMock,
+        mock_process: MagicMock,
+        tmp_path: Any,
+    ) -> None:
+        yaml_content = """\
+defaults:
+  max_videos: 1
+channels:
+  - url: https://youtube.com/@TestChannel
+"""
+        config_file = tmp_path / "channels.yaml"
+        config_file.write_text(yaml_content, encoding="utf-8")
+        mock_logging.return_value = MagicMock()
+        mock_connect.return_value = MagicMock()
+
+        runner = CliRunner()
+        result = runner.invoke(ingest, ["-c", str(config_file)])
+        assert result.exit_code == 1

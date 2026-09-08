@@ -12,6 +12,7 @@ import click
 from dotenv import load_dotenv
 
 from lucas_v2.config import ChannelSpec
+from lucas_v2.subs import AbortIngestion, RateLimitState
 
 logger: logging.Logger = logging.getLogger("lucas_v2")
 
@@ -76,9 +77,10 @@ def download_and_store(
     conn: Any,
     is_new: bool,
     tok: Any,
+    rate_state: RateLimitState,
 ) -> None:
     from lucas_v2.db import upsert_video, replace_chunks
-    from lucas_v2.subs import download_srt
+    from lucas_v2.subs import download_srt, RateLimitedError
     from lucas_v2.srt import parse_srt
     from lucas_v2.chunking import chunk_cues
 
@@ -89,7 +91,12 @@ def download_and_store(
         sub_lang: str | None
         sub_kind: str | None
         _meta: dict[str, Any]
-        srt_text, sub_lang, sub_kind, _meta = download_srt(vid_yt_id)
+        srt_text, sub_lang, sub_kind, _meta = download_srt(vid_yt_id, rate_state)
+    except AbortIngestion:
+        raise
+    except RateLimitedError as e:
+        logger.warning("429 persistant sur %s : vidéo skippée sans insertion (%s)", vid_yt_id, e)
+        return
     except Exception as e:
         logger.error("     ERREUR téléchargement subs : %s", e)
         upsert_video(
@@ -126,10 +133,10 @@ def download_and_store(
 def process_videos(
     videos: list[dict[str, Any]], channel_row_id: int,
     conn: Any, force: bool, dry_run: bool, tok: Any,
+    rate_state: RateLimitState,
     force_id: str | None = None,
 ) -> tuple[int, int]:
     from lucas_v2.db import video_exists
-    from lucas_v2.subs import RateLimitedError
 
     new_count: int = 0
     existing_count: int = 0
@@ -154,15 +161,7 @@ def process_videos(
         if i > 0:
             paced_sleep(INTER_VIDEO_DELAY_S)
 
-        try:
-            download_and_store(vid, channel_row_id, conn, is_new, tok)
-        except RateLimitedError:
-            logger.warning(
-                "Rate-limit persistant : ingestion arrêtée. "
-                "%d vidéo(s) restante(s) reprises au prochain lancement.",
-                len(videos) - i - 1,
-            )
-            break
+        download_and_store(vid, channel_row_id, conn, is_new, tok, rate_state)
 
     return new_count, existing_count
 
@@ -226,22 +225,31 @@ def ingest(config_path: str, dry_run: bool, force_all: bool, video_url: str | No
 
     dry_run_results: list[tuple[str, str | None, int, int]] = []
 
-    for spec in channels:
-        logger.info("--- %s (%s) ---", spec.url, spec.owner)
-        result: tuple[int, str, str] | None = resolve_channel(spec, conn)
-        if result is None:
-            continue
-        channel_row_id: int
-        yt_channel_id: str
-        channel_row_id, yt_channel_id, _ = result
+    rate_state = RateLimitState()
 
-        videos: list[dict[str, Any]] = fetch_videos(yt_channel_id, spec)
-        logger.info("          Videos matching the criteria in channel.yaml : %d", len(videos))
-        new_count, existing_count = process_videos(
-            videos, channel_row_id, conn, force_all, dry_run, tok,
+    try:
+        for spec in channels:
+            logger.info("--- %s (%s) ---", spec.url, spec.owner)
+            result: tuple[int, str, str] | None = resolve_channel(spec, conn)
+            if result is None:
+                continue
+            channel_row_id: int
+            yt_channel_id: str
+            channel_row_id, yt_channel_id, _ = result
+
+            videos: list[dict[str, Any]] = fetch_videos(yt_channel_id, spec)
+            logger.info("          Videos matching the criteria in channel.yaml : %d", len(videos))
+            new_count, existing_count = process_videos(
+                videos, channel_row_id, conn, force_all, dry_run, tok, rate_state,
+            )
+            if dry_run:
+                dry_run_results.append((spec.url, spec.owner, new_count, existing_count))
+    except AbortIngestion as e:
+        logger.error(
+            "Rate-limit global : arrêt complet de l'ingestion (%s). Relancez plus tard.",
+            e,
         )
-        if dry_run:
-            dry_run_results.append((spec.url, spec.owner, new_count, existing_count))
+        sys.exit(1)
 
     if dry_run and dry_run_results:
         print_dry_run_summary(dry_run_results)
@@ -262,6 +270,8 @@ def ingest_single_video(
 
     ch_info: tuple[int, str] | None = find_video_channel(conn, vid_id)
 
+    rate_state = RateLimitState()
+
     if ch_info is not None:
         channel_row_id_db: int
         _yt_ch_id: str
@@ -269,7 +279,7 @@ def ingest_single_video(
         channel_url: str | None = get_channel_url(conn, channel_row_id_db)
         logger.info("Vidéo %s trouvée en base (chaîne : %s), re-téléchargement...", vid_id, channel_url)
 
-        fetch_and_download_single(vid_id, channel_row_id_db, conn, tok, dry_run)
+        fetch_and_download_single(vid_id, channel_row_id_db, conn, tok, dry_run, rate_state)
         logger.info(_DONE_MSG)
         return
 
@@ -293,7 +303,7 @@ def ingest_single_video(
             if dry_run:
                 logger.info("     [dry-run] Re-téléchargement de %s", vid_id)
             else:
-                download_and_store(match, channel_row_id_c, conn, False, tok)
+                download_and_store(match, channel_row_id_c, conn, False, tok, rate_state)
             logger.info(_DONE_MSG)
             return
 
@@ -304,6 +314,7 @@ def ingest_single_video(
 def fetch_and_download_single(
     vid_id: str, channel_row_id: int,
     conn: Any, tok: Any, dry_run: bool,
+    rate_state: RateLimitState,
 ) -> None:
     """Fetch video metadata from YouTube API and download/store it."""
     from lucas_v2.youtube_api import get_client
@@ -330,4 +341,4 @@ def fetch_and_download_single(
         logger.info("     [dry-run] Re-téléchargement de %s", vid_id)
         return
 
-    download_and_store(vid_data, channel_row_id, conn, False, tok)
+    download_and_store(vid_data, channel_row_id, conn, False, tok, rate_state)

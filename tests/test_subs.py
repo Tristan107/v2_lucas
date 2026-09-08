@@ -3,14 +3,22 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from lucas_v2.subs import (
+    AbortIngestion,
+    MAX_CONSECUTIVE_429,
     RETRY_DELAYS_S,
+    RateLimitState,
     RateLimitedError,
     backoff_delay,
     base_opts,
     choose_track,
+    check_abort,
     extract_meta,
     is_retryable,
+    record_429,
+    reset_rate_limit,
     run_with_retry,
     download_srt,
 )
@@ -19,6 +27,40 @@ from lucas_v2.subs import (
 # ---------------------------------------------------------------------------
 # Pure functions — no mocks
 # ---------------------------------------------------------------------------
+
+class TestRateLimitState:
+    def test_record_429_increments(self) -> None:
+        state = RateLimitState()
+        record_429(state)
+        assert state.consecutive_429 == 1
+
+    def test_record_429_accumulates(self) -> None:
+        state = RateLimitState()
+        record_429(state)
+        record_429(state)
+        record_429(state)
+        assert state.consecutive_429 == 3
+
+    def test_reset_rate_limit(self) -> None:
+        state = RateLimitState(consecutive_429=5)
+        reset_rate_limit(state)
+        assert state.consecutive_429 == 0
+
+    def test_check_abort_below_threshold(self) -> None:
+        state = RateLimitState(consecutive_429=MAX_CONSECUTIVE_429 - 1)
+        check_abort(state, "https://example.com")
+        assert state.consecutive_429 == MAX_CONSECUTIVE_429 - 1
+
+    def test_check_abort_at_threshold(self) -> None:
+        state = RateLimitState(consecutive_429=MAX_CONSECUTIVE_429)
+        with pytest.raises(AbortIngestion, match="6x HTTP 429"):
+            check_abort(state, "https://example.com")
+
+    def test_check_abort_above_threshold(self) -> None:
+        state = RateLimitState(consecutive_429=MAX_CONSECUTIVE_429 + 1)
+        with pytest.raises(AbortIngestion):
+            check_abort(state, "https://example.com")
+
 
 class TestChooseTrack:
     def test_fr_manual_priority(self) -> None:
@@ -131,7 +173,8 @@ class TestDownloadSrt:
         self, mock_mkdtemp: MagicMock, mock_do: MagicMock, mock_rmtree: MagicMock
     ) -> None:
         mock_do.return_value = ("srt text", "fr", "manual", {"title": "T"})
-        result = download_srt("vid123")
+        rate_state = RateLimitState()
+        result = download_srt("vid123", rate_state)
         assert result == ("srt text", "fr", "manual", {"title": "T"})
         mock_rmtree.assert_called_once()
 
@@ -142,8 +185,9 @@ class TestDownloadSrt:
         self, mock_mkdtemp: MagicMock, mock_do: MagicMock, mock_rmtree: MagicMock
     ) -> None:
         mock_do.side_effect = RuntimeError("boom")
+        rate_state = RateLimitState()
         try:
-            download_srt("vid123")
+            download_srt("vid123", rate_state)
         except RuntimeError:
             pass
         mock_rmtree.assert_called_once()
@@ -155,8 +199,10 @@ class TestRunWithRetry:
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
-        run_with_retry({}, "https://example.com")
+        rate_state = RateLimitState()
+        run_with_retry({}, "https://example.com", rate_state)
         mock_ydl.extract_info.assert_called_once()
+        assert rate_state.consecutive_429 == 0
 
     @patch("lucas_v2.subs.time.sleep", return_value=None)
     @patch("lucas_v2.subs.random.uniform", return_value=0.0)
@@ -170,13 +216,15 @@ class TestRunWithRetry:
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 429")
+        rate_state = RateLimitState()
         try:
-            run_with_retry({}, "https://example.com")
+            run_with_retry({}, "https://example.com", rate_state)
             assert False, "Should have raised"
         except RateLimitedError:
             pass
         assert mock_sleep.call_count == 2
         mock_ydl.extract_info.assert_called()
+        assert rate_state.consecutive_429 == 3
 
     @patch("lucas_v2.subs.time.sleep", return_value=None)
     @patch("lucas_v2.subs.random.uniform", return_value=0.0)
@@ -190,8 +238,9 @@ class TestRunWithRetry:
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_ydl.extract_info.side_effect = DownloadError("429 Retry-After: 45")
+        rate_state = RateLimitState()
         try:
-            run_with_retry({}, "https://example.com")
+            run_with_retry({}, "https://example.com", rate_state)
             assert False, "Should have raised"
         except RateLimitedError:
             pass
@@ -205,8 +254,48 @@ class TestRunWithRetry:
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
         mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 404")
+        rate_state = RateLimitState()
         try:
-            run_with_retry({}, "https://example.com")
+            run_with_retry({}, "https://example.com", rate_state)
             assert False, "Should have raised"
         except DownloadError:
             pass
+        assert rate_state.consecutive_429 == 0
+
+    @patch("lucas_v2.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
+    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    def test_429_abort_at_threshold(
+        self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        from yt_dlp.utils import DownloadError
+
+        mock_ydl = MagicMock()
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info.side_effect = DownloadError("HTTP Error 429")
+        rate_state = RateLimitState(consecutive_429=3)
+        with pytest.raises(AbortIngestion):
+            run_with_retry({}, "https://example.com", rate_state)
+        assert rate_state.consecutive_429 == 6
+        assert mock_sleep.call_count == 2
+
+    @patch("lucas_v2.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
+    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    def test_429_then_success_resets_state(
+        self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        from yt_dlp.utils import DownloadError
+
+        mock_ydl = MagicMock()
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info.side_effect = [
+            DownloadError("HTTP Error 429"),
+            DownloadError("HTTP Error 429"),
+            None,
+        ]
+        rate_state = RateLimitState()
+        run_with_retry({}, "https://example.com", rate_state)
+        assert rate_state.consecutive_429 == 0

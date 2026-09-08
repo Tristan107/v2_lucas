@@ -31,6 +31,10 @@ channels:
     owner: "Raphaël Glucksmann"
     orientation: "centre gauche"
 
+  - url: "https://www.youtube.com/@partisocialiste"
+    owner: "Olivier Faure PS"
+    orientation: "centre gauche"
+
   # Centre droit
   - url: "https://www.youtube.com/@gabriel_attal"
     owner: "Gabriel Attal"
@@ -61,3 +65,8 @@ channels:
   - url: "https://www.youtube.com/@EricZemmourOfficiel"
     owner: "Éric Zemmour"
     orientation: "extrême droite"
+
+  - url: "https://www.youtube.com/@J_Bardella"
+    owner: "Jordan Bardella"
+    orientation: "extrême droite"
+
