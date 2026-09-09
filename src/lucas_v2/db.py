@@ -169,6 +169,23 @@ def video_exists(conn: Any, youtube_str_id: str) -> bool:
     return row is not None
 
 
+def fetch_existing_ids(conn: Any, ids: list[str]) -> set[str]:
+    """Batch lookup : retourne l'ensemble des youtube_str_id déjà en table."""
+    if not ids:
+        return set()
+    unique: list[str] = list(set(ids))
+    seen: set[str] = set()
+    for start in range(0, len(unique), _CHUNK_BATCH):
+        chunk: list[str] = unique[start:start + _CHUNK_BATCH]
+        placeholders: str = ",".join(["?"] * len(chunk))
+        rows = conn.execute(
+            f"SELECT youtube_str_id FROM video WHERE youtube_str_id IN ({placeholders})",
+            tuple(chunk),
+        ).fetchall()
+        seen.update(str(r[0]) for r in rows)
+    return seen
+
+
 def find_video_channel(conn: Any, youtube_str_id: str) -> tuple[int, str] | None:
     """Return (channel_row_id, channel_yt_id) for a video, or None if not found."""
     row = conn.execute(

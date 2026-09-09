@@ -8,6 +8,7 @@ import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSourc
 from lucas_v2.chunking import Chunk
 from lucas_v2.db import (
     DbConn,
+    fetch_existing_ids,
     find_video_channel,
     get_channel_url,
     replace_chunks,
@@ -147,6 +148,42 @@ def test_video_exists_true() -> None:
 def test_video_exists_false() -> None:
     conn = _conn()
     assert video_exists(conn, "nonexistent") is False
+
+
+def test_fetch_existing_ids_empty() -> None:
+    conn = _conn()
+    assert fetch_existing_ids(conn, []) == set()
+
+
+def test_fetch_existing_ids_single_existing() -> None:
+    conn = _conn()
+    ch_id = upsert_channel(conn, "https://yt.com/ch1", "UC123", "Ch", None, None)
+    upsert_video(conn, ch_id, "vid1", "T", None, None, None, None, "ok", None)
+    assert fetch_existing_ids(conn, ["vid1"]) == {"vid1"}
+
+
+def test_fetch_existing_ids_single_missing() -> None:
+    conn = _conn()
+    assert fetch_existing_ids(conn, ["nope"]) == set()
+
+
+def test_fetch_existing_ids_mix_and_duplicates() -> None:
+    conn = _conn()
+    ch_id = upsert_channel(conn, "https://yt.com/ch1", "UC123", "Ch", None, None)
+    upsert_video(conn, ch_id, "vid1", "T", None, None, None, None, "ok", None)
+    upsert_video(conn, ch_id, "vid2", "T", None, None, None, None, "ok", None)
+    result = fetch_existing_ids(conn, ["vid1", "vid2", "vid1", "missing"])
+    assert result == {"vid1", "vid2"}
+
+
+def test_fetch_existing_ids_400() -> None:
+    conn = _conn()
+    ch_id = upsert_channel(conn, "https://yt.com/ch1", "UC123", "Ch", None, None)
+    ids = [f"vid{i:04d}" for i in range(400)]
+    for vid in ids:
+        upsert_video(conn, ch_id, vid, "T", None, None, None, None, "ok", None)
+    result = fetch_existing_ids(conn, ids)
+    assert result == set(ids)
 
 
 def test_find_video_channel_found() -> None:

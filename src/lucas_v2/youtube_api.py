@@ -78,9 +78,10 @@ def _resolve_by_search(youtube: Any, query: str) -> tuple[str, str]:
     raise ValueError(f"Chaîne introuvable : {query}")
 
 
-def resolve_channel_id(url_or_handle: str) -> tuple[str, str]:
+def resolve_channel_id(url_or_handle: str, youtube: Any = None) -> tuple[str, str]:
     """Resolve channel URL or @Handle → (channel_id, title)."""
-    youtube: Any = get_client()
+    if youtube is None:
+        youtube = get_client()
     kind: str
     value: str
     kind, value = extract_channel_ref(url_or_handle)
@@ -194,12 +195,13 @@ def _fetch_video_details(
 
 
 def list_videos(channel_id: str, max_videos: int | None = 1,
-                since_days: int | None = None) -> list[dict[str, Any]]:
+                since_days: int | None = None, youtube: Any = None) -> list[dict[str, Any]]:
     """List videos from a channel's uploads playlist.
 
     Returns list of dicts: {video_id, title, upload_date, duration_s, youtube_str_id, published_at}.
     """
-    youtube: Any = get_client()
+    if youtube is None:
+        youtube = get_client()
 
     ch_resp: dict[str, Any] = youtube.channels().list(
         part="contentDetails", id=channel_id

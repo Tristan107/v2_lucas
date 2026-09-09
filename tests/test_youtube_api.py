@@ -380,3 +380,26 @@ class TestListVideos:
         }
         videos = list_videos("UC123", max_videos=1)
         assert len(videos) == 1
+
+    @patch("lucas_v2.youtube_api.get_client")
+    def test_resolve_injected_client_skips_get_client(self, mock_get_client: MagicMock) -> None:
+        mock_yt = MagicMock()
+        mock_yt.channels().list().execute.return_value = {
+            "items": [{"id": "UC123", "snippet": {"title": "T"}}]
+        }
+        ch_id, _ = resolve_channel_id(
+            "https://youtube.com/channel/UC1234567890abcdefghij", youtube=mock_yt
+        )
+        assert ch_id == "UC123"
+        mock_get_client.assert_not_called()
+
+    @patch("lucas_v2.youtube_api.get_client")
+    def test_list_videos_injected_client_skips_get_client(self, mock_get_client: MagicMock) -> None:
+        mock_yt = MagicMock()
+        mock_yt.channels().list().execute.return_value = {
+            "items": [{"contentDetails": {"relatedPlaylists": {"uploads": "PL9"}}}]
+        }
+        mock_yt.playlistItems().list().execute.return_value = {"items": []}
+        videos = list_videos("UC123", max_videos=1, youtube=mock_yt)
+        assert videos == []
+        mock_get_client.assert_not_called()
