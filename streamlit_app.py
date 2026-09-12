@@ -5,6 +5,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from lucas_v2.ui.app import render_youtube_page
+
 IMG_DIR = Path(__file__).parent / "src" / "lucas_v2" / "ui" / "img"
 
 
@@ -13,20 +15,16 @@ def _img_to_data_uri(path: Path) -> str:
     return f"data:image/png;base64,{data}"
 
 
-@st.dialog("Coming soon !")
-def sondages_coming_soon() -> None:
-    st.info("Cette fonctionnalité sera disponible prochainement !")
+def _navigate_to(page: str) -> None:
+    st.session_state["current_page"] = page
+    if page == "home":
+        st.query_params.clear()
+    else:
+        st.query_params["page"] = page
+    st.rerun()
 
 
 def render_homepage() -> None:
-    params = st.query_params
-    if "sondages" in params and not st.session_state.get("sondages_popup_shown"):
-        st.session_state["sondages_popup_shown"] = True
-        st.query_params.clear()
-        sondages_coming_soon()
-    elif "sondages" not in params:
-        st.session_state.pop("sondages_popup_shown", None)
-
     yt_logo = _img_to_data_uri(IMG_DIR / "Youtube_logo.png")
 
     st.html(
@@ -52,7 +50,7 @@ def render_homepage() -> None:
             </span>
         </div>
         <div style="display:flex;justify-content:center;gap:3rem;">
-            <a href="/#/1_YouTube" style="text-decoration:none;">
+            <a href="?page=youtube" style="text-decoration:none;">
                 <div style="
                     width:220px;height:200px;
                     border:2px solid #ddd;border-radius:18px;
@@ -64,7 +62,7 @@ def render_homepage() -> None:
                     <span style="font-size:1.25rem;font-weight:700;color:#264653;">YouTube</span>
                 </div>
             </a>
-            <a href="/?sondages=1" style="text-decoration:none;">
+            <a href="?page=sondages" style="text-decoration:none;">
                 <div style="
                     width:220px;height:200px;
                     border:2px solid #ddd;border-radius:18px;
@@ -81,4 +79,40 @@ def render_homepage() -> None:
     )
 
 
-render_homepage()
+def render_sondages_page() -> None:
+    if st.button("← Accueil"):
+        _navigate_to("home")
+    st.html(
+        """
+        <div style="text-align:center;margin-top:2rem;">
+            <span style="font-size:clamp(1.2em,2.5vw,2em);font-weight:bold;">
+                <span style="color:#E63946">L</span><span style="color:#457B9D">U</span><span style="color:#2A9D8F">C</span><span style="color:#E9C46A">A</span><span style="color:#457B9D">S</span>
+                — Sondages
+            </span>
+        </div>
+        <div style="text-align:center;margin-top:2rem;">
+            <span style="font-size:1.2em;color:#666;">📋 Bientôt disponible</span>
+        </div>
+        """
+    )
+
+
+# --- Main routing ---
+params = st.query_params
+if "page" in params:
+    target = str(params["page"])
+    if target in ("youtube", "sondages"):
+        st.session_state["current_page"] = target
+
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = "home"
+
+page = st.session_state["current_page"]
+if page == "youtube":
+    if st.button("← Accueil"):
+        _navigate_to("home")
+    render_youtube_page()
+elif page == "sondages":
+    render_sondages_page()
+else:
+    render_homepage()
