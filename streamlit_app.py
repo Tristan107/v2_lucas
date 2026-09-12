@@ -13,7 +13,20 @@ def _img_to_data_uri(path: Path) -> str:
     return f"data:image/png;base64,{data}"
 
 
+@st.dialog("Coming soon !")
+def sondages_coming_soon() -> None:
+    st.info("Cette fonctionnalité sera disponible prochainement !")
+
+
 def render_homepage() -> None:
+    params = st.query_params
+    if "sondages" in params and not st.session_state.get("sondages_popup_shown"):
+        st.session_state["sondages_popup_shown"] = True
+        st.query_params.clear()
+        sondages_coming_soon()
+    elif "sondages" not in params:
+        st.session_state.pop("sondages_popup_shown", None)
+
     yt_logo = _img_to_data_uri(IMG_DIR / "Youtube_logo.png")
 
     st.html(
@@ -51,7 +64,7 @@ def render_homepage() -> None:
                     <span style="font-size:1.25rem;font-weight:700;color:#264653;">YouTube</span>
                 </div>
             </a>
-            <a href="/#/2_Sondages" style="text-decoration:none;">
+            <a href="/?sondages=1" style="text-decoration:none;">
                 <div style="
                     width:220px;height:200px;
                     border:2px solid #ddd;border-radius:18px;
