@@ -30,7 +30,7 @@ def render_homepage() -> None:
         <div style="text-align:center;margin-bottom:0.5rem;">
             <span style="font-size:clamp(1.5em,3vw,2.5em);font-weight:bold;">
                 <span style="color:#E63946">L</span><span style="color:#457B9D">U</span><span style="color:#2A9D8F">C</span><span style="color:#E9C46A">A</span><span style="color:#457B9D">S</span>
-                — L'Usine de Collecte d'informations<br>et d'Analyse Synthétique
+                — <span style="color:#E63946">L</span>'<span style="color:#457B9D">U</span>sine de <span style="color:#2A9D8F">C</span>ollecte d'informations<br>et d'<span style="color:#E9C46A">A</span>nalyse <span style="color:#457B9D">S</span>ynthétique
             </span>
         </div>
         <div style="text-align:center;margin-bottom:2.5rem;">
