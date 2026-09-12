@@ -89,19 +89,15 @@ def _inject_compact_style() -> None:
     )
 
 
-def _render_header() -> None:
+def _render_youtube_header() -> None:
     st.html(
         """
         <div style="font-size:clamp(1.2em,2.5vw,2em);font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
             <span style="color:#E63946">L</span><span style="color:#457B9D">U</span><span style="color:#2A9D8F">C</span><span style="color:#E9C46A">A</span><span style="color:#457B9D">S</span>
-            — <span style="color:#E63946">L</span>'<span style="color:#457B9D">U</span>sine de <span style="color:#2A9D8F">C</span>ollecte d'informations
-        </div>
-        <div style="font-size:clamp(1.2em,2.5vw,2em);font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-            et d'<span style="color:#E9C46A">A</span>nalyse <span style="color:#457B9D">S</span>ynthétique
+            — Recherche YouTube
         </div>
         """
     )
-    st.caption("🏛️ Veille politique automatisée — Échéance présidentielle 2027")
 
 
 def _sync_search_state(match_query: str) -> None:
@@ -212,9 +208,9 @@ def _render_video_detail(conn: Any, match_query: str, youtube_str_id: str) -> No
     _render_prev_next("chunk_page", page, total_pages)
 
 
-def render_app() -> None:
+def render_youtube_page() -> None:
     _inject_compact_style()
-    _render_header()
+    _render_youtube_header()
 
     col_search, col_btn = st.columns([5, 1])
     with col_search:
