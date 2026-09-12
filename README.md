@@ -85,7 +85,25 @@ uv run lucas-v2 --help
 uv run lucas-v2 ingest --help
 ```
 
-## Exemple de recherche plein-texte
+## Recherche Streamlit (IHM)
+
+Interface web pour rechercher dans les transcripts ingérés via l'index FTS5.
+
+```bash
+# Lancer l'app (nécessite TURSO_DATABASE_URL + TURSO_AUTH_TOKEN dans .env)
+uv run streamlit run streamlit_app.py
+```
+
+**Fonctionnalités :**
+- Champ libre : `travail*`, `immigr* travail*` (AND entre termes, wildcards `*`)
+- Liste des vidéos triées par date décroissante avec compteur de mentions
+- Panneau dépliant par vidéo : chunks matchés avec gras natif `**...**`
+- Timestamp `hh:mm:ss` cliquable → ouvre YouTube au bon moment
+- Pagination "Voir plus" (+10 chunks)
+
+**Déploiement Streamlit Cloud :** ajouter `TURSO_DATABASE_URL` et `TURSO_AUTH_TOKEN` dans les Secrets de l'app.
+
+## Exemple de recherche SQL
 
 ```sql
 SELECT tc.seq_no, tc.start_s, tc.end_s,
@@ -121,7 +139,16 @@ src/lucas_v2/
   srt.py           # parsing SRT → secondes
   chunking.py      # regroupement phrases, 128 tokens max
   db.py            # connexion Turso, schéma, upserts
+  schema.sql       # DDL Turso (FTS5, triggers)
+  ui/
+    __init__.py
+    query.py       # helpers purs (AND, hhmmss, url)
+    db_search.py   # requêtes FTS groupées (videos, chunks)
+    app.py         # Streamlit render_app()
+streamlit_app.py   # point d'entrée Streamlit
 tests/test_srt_chunk.py
+tests/test_search_query.py
+tests/test_search_db.py
 ```
 
 Plan détaillé : `.opencode/plans/yt-dlp-transcripts-turso.md`

@@ -17,6 +17,7 @@ dependencies = [
     "requests>=2.34.2",
     "transformers>=5.16.1",
     "yt-dlp>=2026.8.19",
+    "streamlit>=1.35",
 ]
 
 [project.scripts]
