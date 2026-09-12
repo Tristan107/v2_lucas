@@ -46,23 +46,28 @@ def _inject_compact_style() -> None:
                 box-shadow: 0 0 0 1px #457B9D !important;
             }
 
-            /* Adjust spacing */
-            div[data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
-            div[data-testid="stCaptionContainer"] { margin-bottom: 0 !important; }
+            /* Adjust vertical layout spacing */
+            div[data-testid="stVerticalBlock"] { gap: 0rem !important; }
+            div[data-testid="stCaptionContainer"] { margin-bottom: 0.5rem !important; }
             hr { margin: 0.35rem 0 !important; }
 
-            /* Force Tertiary Button Left Alignment */
+            /* Force Tertiary Button Left Alignment & Remove Bottom Margin */
+            div[data-testid="stButton"] {
+                margin-bottom: 0 !important;
+            }
             div[data-testid="stButton"] button[kind="tertiary"] {
                 display: flex !important;
                 justify-content: flex-start !important;
                 align-items: flex-start !important;
                 text-align: left !important;
-                font-size: 1.2rem !important;
+                font-size: 1.15rem !important;
                 font-weight: 600 !important;
-                line-height: 1.3 !important;
+                line-height: 1.35 !important;
                 padding: 0 !important;
+                margin: 0 !important;
                 white-space: normal !important;
                 width: 100% !important;
+                min-height: unset !important;
             }
             div[data-testid="stButton"] button[kind="tertiary"] * {
                 text-align: left !important;
@@ -70,11 +75,14 @@ def _inject_compact_style() -> None:
                 font-weight: 600 !important;
             }
 
+            /* Metadata line pinned directly under title */
             .lucas-meta {
                 font-size: 0.8rem;
-                margin-top: 0.1rem;
+                margin-top: -0.15rem !important;
+                margin-bottom: 0.75rem !important;
                 color: #666;
                 text-align: left;
+                line-height: 1.2;
             }
         </style>
         """
