@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from lucas_v2.youtube_api import (
+from lucas_v2.ingest.youtube_api import (
     extract_channel_ref,
     iso_to_yyyymmdd,
     parse_iso_duration,
@@ -186,7 +186,7 @@ def _mock_youtube() -> MagicMock:
 
 
 class TestResolveChannelId:
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_by_id(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -197,7 +197,7 @@ class TestResolveChannelId:
         assert ch_id == "UC123"
         assert title == "My Channel"
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_by_handle(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -208,7 +208,7 @@ class TestResolveChannelId:
         assert ch_id == "UC456"
         assert title == "Handle Chan"
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_by_search_fallback(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -221,7 +221,7 @@ class TestResolveChannelId:
         assert ch_id == "UC789"
         assert title == "Found"
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_not_found_raises(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -235,7 +235,7 @@ class TestResolveChannelId:
 
 
 class TestListVideos:
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_returns_videos(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -266,7 +266,7 @@ class TestListVideos:
         assert videos[0]["video_id"] == "v1"
         assert videos[0]["duration_s"] == 330
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_empty_channel(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -274,7 +274,7 @@ class TestListVideos:
         videos = list_videos("UC_empty", max_videos=1)
         assert videos == []
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_no_videos_in_playlist(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -288,7 +288,7 @@ class TestListVideos:
         videos = list_videos("UC123", max_videos=5)
         assert videos == []
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_max_videos_none_no_cutoff_paginates_to_end(
         self, mock_get_client: MagicMock,
     ) -> None:
@@ -323,7 +323,7 @@ class TestListVideos:
         videos = list_videos("UC123", max_videos=None)
         assert len(videos) == 5
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_max_videos_none_with_cutoff(self, mock_get_client: MagicMock) -> None:
         from datetime import datetime, timedelta, timezone
 
@@ -357,7 +357,7 @@ class TestListVideos:
         assert "r1" in ids
         assert "o1" not in ids
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_max_videos_one_limit_still_respected(self, mock_get_client: MagicMock) -> None:
         mock_yt = _mock_youtube()
         mock_get_client.return_value = mock_yt
@@ -381,7 +381,7 @@ class TestListVideos:
         videos = list_videos("UC123", max_videos=1)
         assert len(videos) == 1
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_resolve_injected_client_skips_get_client(self, mock_get_client: MagicMock) -> None:
         mock_yt = MagicMock()
         mock_yt.channels().list().execute.return_value = {
@@ -393,7 +393,7 @@ class TestListVideos:
         assert ch_id == "UC123"
         mock_get_client.assert_not_called()
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     def test_list_videos_injected_client_skips_get_client(self, mock_get_client: MagicMock) -> None:
         mock_yt = MagicMock()
         mock_yt.channels().list().execute.return_value = {

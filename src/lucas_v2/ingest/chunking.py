@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import re
 import warnings
-from dataclasses import dataclass
 from typing import Any
 
-from lucas_v2.srt import Cue
+from lucas_v2.db import Chunk
+from lucas_v2.ingest.srt import Cue
 
 MAX_CONTENT_TOKENS: int = 126  # +2 [CLS]/[SEP] = 128 total for MiniLM
 SOFT_MIN: int = 110
@@ -40,15 +40,6 @@ def count_tokens(text: str, tokenizer: Any = None) -> int:
     if tok is None:
         return len(text.split())
     return len(tok.encode(text, add_special_tokens=False))
-
-
-@dataclass
-class Chunk:
-    seq_no: int
-    start_s: int
-    end_s: int
-    text: str
-    tokens: int
 
 
 def _ends_sentence(text: str) -> bool:

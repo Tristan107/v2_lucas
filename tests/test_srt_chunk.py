@@ -1,6 +1,6 @@
-from lucas_v2.srt import parse_srt
-from lucas_v2.chunking import chunk_cues, count_tokens, MAX_CONTENT_TOKENS, SOFT_MIN
-from lucas_v2.srt import Cue
+from lucas_v2.ingest.srt import parse_srt
+from lucas_v2.ingest.chunking import chunk_cues, count_tokens, MAX_CONTENT_TOKENS, SOFT_MIN
+from lucas_v2.ingest.srt import Cue
 
 
 SAMPLE_SRT = """\
@@ -216,7 +216,7 @@ def test_pack_density():
 
 def test_chunk_with_real_tokenizer():
     """Test with the actual MiniLM tokenizer if available."""
-    from lucas_v2.chunking import get_tokenizer
+    from lucas_v2.ingest.chunking import get_tokenizer
     tok = get_tokenizer()
     if tok is None:
         return  # skip if tokenizer unavailable

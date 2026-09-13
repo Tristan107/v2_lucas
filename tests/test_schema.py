@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
 
-from lucas_v2.schema import init_schema
+from lucas_v2.db.schema import init_schema
 
 
 def test_load_schema_returns_sql() -> None:
-    from lucas_v2.schema import load_schema
+    from lucas_v2.db.schema import load_schema
 
     sql = load_schema()
     assert "CREATE TABLE" in sql

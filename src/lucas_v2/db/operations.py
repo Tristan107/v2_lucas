@@ -1,70 +1,13 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
-import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
-
-from lucas_v2.chunking import Chunk
+from lucas_v2.db import Chunk
 
 logger: logging.Logger = logging.getLogger("lucas_v2")
 
-
-class DbConn:
-    """Wrapper around libsql connection that auto-reconnects on Turso stream expiry."""
-
-    def __init__(self, conn: Any) -> None:
-        self._conn: Any = conn
-
-    def execute(self, query: str, params: Any = ()) -> Any:
-        try:
-            return self._conn.execute(query, params)
-        except ValueError as e:
-            if "stream not found" not in str(e):
-                raise
-            logger.warning("Turso stream expired, reconnecting...")
-            self._conn = _raw_connect()
-            return self._conn.execute(query, params)
-
-    def commit(self) -> None:
-        try:
-            self._conn.commit()
-        except ValueError as e:
-            if "stream not found" not in str(e):
-                raise
-            logger.warning("Turso stream expired during commit, reconnecting...")
-            self._conn = _raw_connect()
-            self._conn.commit()
-
-    def rollback(self) -> None:
-        try:
-            self._conn.rollback()
-        except ValueError as e:
-            if "stream not found" not in str(e):
-                raise
-            logger.warning("Turso stream expired during rollback, reconnecting...")
-            self._conn = _raw_connect()
-
-    def executescript(self, script: str) -> Any:
-        try:
-            return self._conn.executescript(script)
-        except ValueError as e:
-            if "stream not found" not in str(e):
-                raise
-            logger.warning("Turso stream expired during executescript, reconnecting...")
-            self._conn = _raw_connect()
-            return self._conn.executescript(script)
-
-
-def _raw_connect() -> Any:
-    url: str = os.environ["TURSO_DATABASE_URL"]
-    token: str | None = os.environ.get("TURSO_AUTH_TOKEN")
-    return libsql.connect(url, auth_token=token)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
-
-
-def connect() -> DbConn:
-    return DbConn(_raw_connect())
+_CHUNK_BATCH = 500  # rows per INSERT statement (sécurité, pas de limite SQLite stricte ici)
 
 
 def search_chunks(conn: Any, query: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -131,9 +74,6 @@ def upsert_video(conn: Any, fk_channel_id: int | None,
          duration_s, sub_lang, sub_kind, status, error),
     )
     return int(cur.fetchone()[0])
-
-
-_CHUNK_BATCH = 500  # rows per INSERT statement (sécurité, pas de limite SQLite stricte ici)
 
 
 def replace_chunks(conn: Any, fk_video_id: int, chunks: list[Chunk], *, delete_existing: bool = True) -> None:

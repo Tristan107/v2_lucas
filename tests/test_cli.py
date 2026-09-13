@@ -15,8 +15,8 @@ from lucas_v2 import (
     ingest,
     paced_sleep,
 )
-from lucas_v2.config import ChannelSpec
-from lucas_v2.subs import AbortIngestion, RateLimitState
+from lucas_v2.ingest.config import ChannelSpec
+from lucas_v2.ingest.subs import AbortIngestion, RateLimitState
 
 
 # ---------------------------------------------------------------------------
@@ -45,8 +45,8 @@ class TestExtractVideoId:
 # ---------------------------------------------------------------------------
 
 class TestResolveChannel:
-    @patch("lucas_v2.db.upsert_channel")
-    @patch("lucas_v2.youtube_api.resolve_channel_id")
+    @patch("lucas_v2.db.operations.upsert_channel")
+    @patch("lucas_v2.ingest.youtube_api.resolve_channel_id")
     def test_success(
         self, mock_resolve: MagicMock, mock_upsert: MagicMock
     ) -> None:
@@ -60,7 +60,7 @@ class TestResolveChannel:
         assert result[1] == "UC123"
         assert result[2] == "My Channel"
 
-    @patch("lucas_v2.youtube_api.resolve_channel_id")
+    @patch("lucas_v2.ingest.youtube_api.resolve_channel_id")
     def test_failure_returns_none(self, mock_resolve: MagicMock) -> None:
         mock_resolve.side_effect = ValueError("not found")
         spec = ChannelSpec(url="@bad", max_videos=1, since_days=None, lang="fr")
@@ -68,8 +68,8 @@ class TestResolveChannel:
         result = resolve_channel(spec, conn)
         assert result is None
 
-    @patch("lucas_v2.db.upsert_channel", return_value=7)
-    @patch("lucas_v2.youtube_api.resolve_channel_id")
+    @patch("lucas_v2.db.operations.upsert_channel", return_value=7)
+    @patch("lucas_v2.ingest.youtube_api.resolve_channel_id")
     def test_propagates_youtube_client(
         self, mock_resolve: MagicMock, mock_upsert: MagicMock
     ) -> None:
@@ -85,7 +85,7 @@ class TestResolveChannel:
 # ---------------------------------------------------------------------------
 
 class TestFetchVideos:
-    @patch("lucas_v2.youtube_api.list_videos")
+    @patch("lucas_v2.ingest.youtube_api.list_videos")
     def test_success(self, mock_list: MagicMock) -> None:
         from lucas_v2 import fetch_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -95,7 +95,7 @@ class TestFetchVideos:
         assert len(result) == 1
         mock_list.assert_called_once_with("UC123", 5, 30, youtube=None)
 
-    @patch("lucas_v2.youtube_api.list_videos")
+    @patch("lucas_v2.ingest.youtube_api.list_videos")
     def test_propagates_youtube_client(self, mock_list: MagicMock) -> None:
         from lucas_v2 import fetch_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -104,7 +104,7 @@ class TestFetchVideos:
         fetch_videos("UC123", spec, youtube=sentinel)
         mock_list.assert_called_once_with("UC123", 5, 30, youtube=sentinel)
 
-    @patch("lucas_v2.youtube_api.list_videos")
+    @patch("lucas_v2.ingest.youtube_api.list_videos")
     def test_error_returns_empty(self, mock_list: MagicMock) -> None:
         from lucas_v2 import fetch_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -132,7 +132,7 @@ class TestPacedSleep:
 # ---------------------------------------------------------------------------
 
 class TestProcessVideos:
-    @patch("lucas_v2.db.fetch_existing_ids", return_value=set())
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value=set())
     def test_dry_run_new(self, mock_existing: MagicMock) -> None:
         from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -142,7 +142,7 @@ class TestProcessVideos:
         assert new == 1
         assert existing == 0
 
-    @patch("lucas_v2.db.fetch_existing_ids", return_value={"v1"})
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value={"v1"})
     def test_dry_run_existing(self, mock_existing: MagicMock) -> None:
         from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -152,7 +152,7 @@ class TestProcessVideos:
         assert new == 0
         assert existing == 1
 
-    @patch("lucas_v2.db.fetch_existing_ids", return_value={"v1"})
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value={"v1"})
     def test_skips_existing_when_not_force(self, mock_existing: MagicMock) -> None:
         from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -161,7 +161,7 @@ class TestProcessVideos:
         process_videos(videos, 1, conn, force=False, dry_run=False, tok=None, rate_state=RateLimitState())
 
     @patch("lucas_v2.download_and_store")
-    @patch("lucas_v2.db.fetch_existing_ids", return_value={"v1"})
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value={"v1"})
     def test_force_downloads_existing(
         self, mock_existing: MagicMock, mock_dl: MagicMock
     ) -> None:
@@ -174,7 +174,7 @@ class TestProcessVideos:
 
     @patch("lucas_v2.paced_sleep")
     @patch("lucas_v2.download_and_store")
-    @patch("lucas_v2.db.fetch_existing_ids", return_value=set())
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value=set())
     def test_paced_sleep_between_videos(
         self, mock_existing: MagicMock, mock_dl: MagicMock, mock_sleep: MagicMock
     ) -> None:
@@ -189,7 +189,7 @@ class TestProcessVideos:
         mock_sleep.assert_called_once_with(INTER_VIDEO_DELAY_S)
 
     @patch("lucas_v2.download_and_store")
-    @patch("lucas_v2.db.fetch_existing_ids", return_value=set())
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value=set())
     def test_rate_limited_continues_to_next(
         self, mock_existing: MagicMock, mock_dl: MagicMock
     ) -> None:
@@ -204,7 +204,7 @@ class TestProcessVideos:
         assert mock_dl.call_count == 2
 
     @patch("lucas_v2.download_and_store")
-    @patch("lucas_v2.db.fetch_existing_ids", return_value=set())
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value=set())
     def test_abort_ingestion_propagates(
         self, mock_existing: MagicMock, mock_dl: MagicMock
     ) -> None:
@@ -220,7 +220,7 @@ class TestProcessVideos:
             process_videos(videos, 1, conn, force=False, dry_run=False, tok=None, rate_state=RateLimitState())
         assert mock_dl.call_count == 1
 
-    @patch("lucas_v2.db.fetch_existing_ids")
+    @patch("lucas_v2.db.operations.fetch_existing_ids")
     def test_batch_single_call(self, mock_batch: MagicMock) -> None:
         from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -235,7 +235,7 @@ class TestProcessVideos:
         assert new == 1
         assert existing == 1
 
-    @patch("lucas_v2.db.fetch_existing_ids", return_value={"v1"})
+    @patch("lucas_v2.db.operations.fetch_existing_ids", return_value={"v1"})
     def test_force_id_counts_as_new(self, mock_batch: MagicMock) -> None:
         from lucas_v2 import process_videos  # pyright: ignore[reportPrivateUsage]
 
@@ -251,13 +251,13 @@ class TestProcessVideos:
 # ---------------------------------------------------------------------------
 
 class TestDownloadAndStore:
-    @patch("lucas_v2.db.upsert_video")
-    @patch("lucas_v2.subs.download_srt")
+    @patch("lucas_v2.db.operations.upsert_video")
+    @patch("lucas_v2.ingest.subs.download_srt")
     def test_rate_limited_no_upsert(
         self, mock_srt: MagicMock, mock_upsert: MagicMock
     ) -> None:
         from lucas_v2 import download_and_store  # pyright: ignore[reportPrivateUsage]
-        from lucas_v2.subs import RateLimitedError
+        from lucas_v2.ingest.subs import RateLimitedError
 
         mock_srt.side_effect = RateLimitedError("429")
         conn = MagicMock()
@@ -267,8 +267,8 @@ class TestDownloadAndStore:
         mock_upsert.assert_not_called()
         conn.commit.assert_not_called()
 
-    @patch("lucas_v2.db.upsert_video")
-    @patch("lucas_v2.subs.download_srt")
+    @patch("lucas_v2.db.operations.upsert_video")
+    @patch("lucas_v2.ingest.subs.download_srt")
     def test_abort_ingestion_propagates_no_upsert(
         self, mock_srt: MagicMock, mock_upsert: MagicMock
     ) -> None:
@@ -283,11 +283,11 @@ class TestDownloadAndStore:
         mock_upsert.assert_not_called()
         conn.commit.assert_not_called()
 
-    @patch("lucas_v2.chunking.chunk_cues")
-    @patch("lucas_v2.srt.parse_srt", return_value=[])
-    @patch("lucas_v2.db.replace_chunks")
-    @patch("lucas_v2.db.upsert_video", return_value=42)
-    @patch("lucas_v2.subs.download_srt", return_value=("srt text", "fr", "manual", {}))
+    @patch("lucas_v2.ingest.chunking.chunk_cues")
+    @patch("lucas_v2.ingest.srt.parse_srt", return_value=[])
+    @patch("lucas_v2.db.operations.replace_chunks")
+    @patch("lucas_v2.db.operations.upsert_video", return_value=42)
+    @patch("lucas_v2.ingest.subs.download_srt", return_value=("srt text", "fr", "manual", {}))
     def test_success_no_abort(
         self, mock_srt: MagicMock, mock_upsert: MagicMock,
         mock_replace: MagicMock, mock_parse: MagicMock, mock_chunk: MagicMock,
@@ -331,13 +331,13 @@ class TestCLI:
         result = runner.invoke(ingest, ["-c", "/nonexistent/config.yaml"])
         assert result.exit_code == 1
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     @patch("lucas_v2.process_videos", return_value=(1, 0))
     @patch("lucas_v2.fetch_videos", return_value=[{"youtube_str_id": "v1", "title": "V1"}])
     @patch("lucas_v2.resolve_channel", return_value=(1, "UC123", "Test"))
-    @patch("lucas_v2.chunking.get_tokenizer", return_value=None)
-    @patch("lucas_v2.schema.init_schema")
-    @patch("lucas_v2.db.connect")
+    @patch("lucas_v2.ingest.chunking.get_tokenizer", return_value=None)
+    @patch("lucas_v2.db.schema.init_schema")
+    @patch("lucas_v2.db.connection.connect")
     @patch("lucas_v2.logging_config.setup_logging")
     def test_ingest_dry_run(
         self,
@@ -366,13 +366,13 @@ channels:
         result = runner.invoke(ingest, ["-c", str(config_file), "--dry-run"])
         assert result.exit_code == 0
 
-    @patch("lucas_v2.youtube_api.get_client")
+    @patch("lucas_v2.ingest.youtube_api.get_client")
     @patch("lucas_v2.process_videos", side_effect=AbortIngestion("6x429"))
     @patch("lucas_v2.fetch_videos", return_value=[{"youtube_str_id": "v1", "title": "V1"}])
     @patch("lucas_v2.resolve_channel", return_value=(1, "UC123", "Test"))
-    @patch("lucas_v2.chunking.get_tokenizer", return_value=None)
-    @patch("lucas_v2.schema.init_schema")
-    @patch("lucas_v2.db.connect")
+    @patch("lucas_v2.ingest.chunking.get_tokenizer", return_value=None)
+    @patch("lucas_v2.db.schema.init_schema")
+    @patch("lucas_v2.db.connection.connect")
     @patch("lucas_v2.logging_config.setup_logging")
     def test_ingest_exits_on_abort(
         self,

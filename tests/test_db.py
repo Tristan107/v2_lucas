@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
 
-from lucas_v2.chunking import Chunk
-from lucas_v2.db import (
-    DbConn,
+from lucas_v2.db import Chunk
+from lucas_v2.db.connection import DbConn
+from lucas_v2.db.operations import (
     fetch_existing_ids,
     find_video_channel,
     get_channel_url,
@@ -17,7 +17,7 @@ from lucas_v2.db import (
     upsert_video,
     video_exists,
 )
-from lucas_v2.schema import init_schema
+from lucas_v2.db.schema import init_schema
 
 
 def _conn() -> Any:
@@ -246,7 +246,7 @@ class TestDbConn:
 
         wrapper = DbConn(mock_conn1)
 
-        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+        with patch("lucas_v2.db.connection._raw_connect", return_value=mock_conn2):
             result = wrapper.execute("SELECT 1", ())
 
         mock_conn2.execute.assert_called_once_with("SELECT 1", ())
@@ -270,7 +270,7 @@ class TestDbConn:
 
         wrapper = DbConn(mock_conn1)
 
-        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+        with patch("lucas_v2.db.connection._raw_connect", return_value=mock_conn2):
             wrapper.commit()
 
         mock_conn2.commit.assert_called_once()
@@ -293,7 +293,7 @@ class TestDbConn:
 
         wrapper = DbConn(mock_conn1)
 
-        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+        with patch("lucas_v2.db.connection._raw_connect", return_value=mock_conn2):
             wrapper.executescript("CREATE TABLE t (id INT)")
 
         mock_conn2.executescript.assert_called_once_with("CREATE TABLE t (id INT)")
@@ -305,7 +305,7 @@ class TestDbConn:
 
         wrapper = DbConn(mock_conn1)
 
-        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+        with patch("lucas_v2.db.connection._raw_connect", return_value=mock_conn2):
             wrapper.rollback()
 
         # Rollback after stream loss just reconnects (no retry needed, transaction is dead)
@@ -319,7 +319,7 @@ class TestDbConn:
 
         wrapper = DbConn(mock_conn1)
 
-        with patch("lucas_v2.db._raw_connect", return_value=mock_conn2):
+        with patch("lucas_v2.db.connection._raw_connect", return_value=mock_conn2):
             try:
                 wrapper.execute("SELECT 1")
                 assert False, "Should have raised"

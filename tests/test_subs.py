@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lucas_v2.subs import (
+from lucas_v2.ingest.subs import (
     AbortIngestion,
     MAX_CONSECUTIVE_429,
     RETRY_DELAYS_S,
@@ -166,9 +166,9 @@ class TestBackoffDelay:
 # ---------------------------------------------------------------------------
 
 class TestDownloadSrt:
-    @patch("lucas_v2.subs.shutil.rmtree")
-    @patch("lucas_v2.subs.do_download")
-    @patch("lucas_v2.subs.tempfile.mkdtemp", return_value="/tmp/testdir")
+    @patch("lucas_v2.ingest.subs.shutil.rmtree")
+    @patch("lucas_v2.ingest.subs.do_download")
+    @patch("lucas_v2.ingest.subs.tempfile.mkdtemp", return_value="/tmp/testdir")
     def test_returns_do_download_result(
         self, mock_mkdtemp: MagicMock, mock_do: MagicMock, mock_rmtree: MagicMock
     ) -> None:
@@ -178,9 +178,9 @@ class TestDownloadSrt:
         assert result == ("srt text", "fr", "manual", {"title": "T"})
         mock_rmtree.assert_called_once()
 
-    @patch("lucas_v2.subs.shutil.rmtree")
-    @patch("lucas_v2.subs.do_download")
-    @patch("lucas_v2.subs.tempfile.mkdtemp", return_value="/tmp/testdir")
+    @patch("lucas_v2.ingest.subs.shutil.rmtree")
+    @patch("lucas_v2.ingest.subs.do_download")
+    @patch("lucas_v2.ingest.subs.tempfile.mkdtemp", return_value="/tmp/testdir")
     def test_cleansup_on_error(
         self, mock_mkdtemp: MagicMock, mock_do: MagicMock, mock_rmtree: MagicMock
     ) -> None:
@@ -194,7 +194,7 @@ class TestDownloadSrt:
 
 
 class TestRunWithRetry:
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
     def test_success_no_retry(self, mock_ydl_cls: MagicMock) -> None:
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
@@ -204,9 +204,9 @@ class TestRunWithRetry:
         mock_ydl.extract_info.assert_called_once()
         assert rate_state.consecutive_429 == 0
 
-    @patch("lucas_v2.subs.time.sleep", return_value=None)
-    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    @patch("lucas_v2.ingest.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.ingest.subs.random.uniform", return_value=0.0)
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
     def test_429_retries_3x(
         self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
     ) -> None:
@@ -226,9 +226,9 @@ class TestRunWithRetry:
         mock_ydl.extract_info.assert_called()
         assert rate_state.consecutive_429 == 3
 
-    @patch("lucas_v2.subs.time.sleep", return_value=None)
-    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    @patch("lucas_v2.ingest.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.ingest.subs.random.uniform", return_value=0.0)
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
     def test_429_retry_after_header(
         self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
     ) -> None:
@@ -246,7 +246,7 @@ class TestRunWithRetry:
             pass
         mock_sleep.assert_called_with(45.0)
 
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
     def test_non_429_error_raises(self, mock_ydl_cls: MagicMock) -> None:
         from yt_dlp.utils import DownloadError
 
@@ -262,9 +262,9 @@ class TestRunWithRetry:
             pass
         assert rate_state.consecutive_429 == 0
 
-    @patch("lucas_v2.subs.time.sleep", return_value=None)
-    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    @patch("lucas_v2.ingest.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.ingest.subs.random.uniform", return_value=0.0)
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
     def test_429_abort_at_threshold(
         self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
     ) -> None:
@@ -280,9 +280,9 @@ class TestRunWithRetry:
         assert rate_state.consecutive_429 == 6
         assert mock_sleep.call_count == 2
 
-    @patch("lucas_v2.subs.time.sleep", return_value=None)
-    @patch("lucas_v2.subs.random.uniform", return_value=0.0)
-    @patch("lucas_v2.subs.yt_dlp.YoutubeDL")
+    @patch("lucas_v2.ingest.subs.time.sleep", return_value=None)
+    @patch("lucas_v2.ingest.subs.random.uniform", return_value=0.0)
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
     def test_429_then_success_resets_state(
         self, mock_ydl_cls: MagicMock, mock_uniform: MagicMock, mock_sleep: MagicMock
     ) -> None:

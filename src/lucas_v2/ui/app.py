@@ -8,7 +8,7 @@ from typing import Any
 from dotenv import load_dotenv
 import streamlit as st
 
-from lucas_v2.db import connect
+from lucas_v2.db.connection import connect
 from lucas_v2.ui.db_search import (
     ChunkHit,
     VideoHit,

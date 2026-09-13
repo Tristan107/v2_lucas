@@ -4,9 +4,9 @@ from typing import Any
 
 import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
 
-from lucas_v2.chunking import Chunk
-from lucas_v2.db import replace_chunks, upsert_channel, upsert_video
-from lucas_v2.schema import init_schema
+from lucas_v2.db import Chunk
+from lucas_v2.db.operations import replace_chunks, upsert_channel, upsert_video
+from lucas_v2.db.schema import init_schema
 from lucas_v2.ui.db_search import count_video_chunks, count_videos, get_video, search_video_chunks, search_videos
 
 
