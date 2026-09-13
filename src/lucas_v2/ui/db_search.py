@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Final
+
+logger = logging.getLogger("lucas_v2")
 
 SNIPPET_TOKENS: Final[int] = 15
 
@@ -38,19 +41,23 @@ def search_videos(conn: Any, match_query: str, limit: int = 10, offset: int = 0)
     Ordered by upload date descending, then mention count descending,
     then video id descending as a stable tiebreaker.
     """
-    rows = conn.execute(
-        "SELECT v.youtube_str_id, v.title, v.upload_date, c.owner, c.orientation, "
-        "COUNT(*) AS mentions "
-        "FROM transcript_chunk_fts f "
-        "JOIN transcript_chunk tc ON tc.id = f.rowid "
-        "JOIN video v ON v.id = tc.fk_video_id "
-        "LEFT JOIN channel c ON c.id = v.fk_channel_id "
-        "WHERE transcript_chunk_fts MATCH ? "
-        "GROUP BY v.id "
-        "ORDER BY v.upload_date DESC, COUNT(*) DESC, v.id DESC "
-        "LIMIT ? OFFSET ?",
-        (match_query, limit, offset),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT v.youtube_str_id, v.title, v.upload_date, c.owner, c.orientation, "
+            "COUNT(*) AS mentions "
+            "FROM transcript_chunk_fts f "
+            "JOIN transcript_chunk tc ON tc.id = f.rowid "
+            "JOIN video v ON v.id = tc.fk_video_id "
+            "LEFT JOIN channel c ON c.id = v.fk_channel_id "
+            "WHERE transcript_chunk_fts MATCH ? "
+            "GROUP BY v.id "
+            "ORDER BY v.upload_date DESC, COUNT(*) DESC, v.id DESC "
+            "LIMIT ? OFFSET ?",
+            (match_query, limit, offset),
+        ).fetchall()
+    except ValueError:
+        logger.warning("Requête FTS5 invalide : %s", match_query)
+        return []
     return [
         VideoHit(
             youtube_str_id=str(r[0]),
@@ -72,18 +79,22 @@ def search_video_chunks(
     offset: int = 0,
 ) -> list[ChunkHit]:
     """Return matching chunks for a single video, in chronological order with pagination."""
-    rows = conn.execute(
-        "SELECT tc.seq_no, tc.start_s, tc.end_s, "
-        f"snippet(transcript_chunk_fts, 0, '**', '**', '…', {SNIPPET_TOKENS}) AS snippet, "
-        "v.youtube_str_id "
-        "FROM transcript_chunk_fts f "
-        "JOIN transcript_chunk tc ON tc.id = f.rowid "
-        "JOIN video v ON v.id = tc.fk_video_id "
-        "WHERE transcript_chunk_fts MATCH ? AND v.youtube_str_id = ? "
-        "ORDER BY tc.seq_no ASC "
-        "LIMIT ? OFFSET ?",
-        (match_query, youtube_str_id, limit, offset),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT tc.seq_no, tc.start_s, tc.end_s, "
+            f"snippet(transcript_chunk_fts, 0, '**', '**', '…', {SNIPPET_TOKENS}) AS snippet, "
+            "v.youtube_str_id "
+            "FROM transcript_chunk_fts f "
+            "JOIN transcript_chunk tc ON tc.id = f.rowid "
+            "JOIN video v ON v.id = tc.fk_video_id "
+            "WHERE transcript_chunk_fts MATCH ? AND v.youtube_str_id = ? "
+            "ORDER BY tc.seq_no ASC "
+            "LIMIT ? OFFSET ?",
+            (match_query, youtube_str_id, limit, offset),
+        ).fetchall()
+    except ValueError:
+        logger.warning("Requête FTS5 invalide : %s", match_query)
+        return []
     return [
         ChunkHit(
             seq_no=int(r[0]),
@@ -98,16 +109,20 @@ def search_video_chunks(
 
 def count_videos(conn: Any, match_query: str) -> int:
     """Count distinct videos whose chunks match *match_query*."""
-    row = conn.execute(
-        "SELECT COUNT(*) FROM ("
-        "SELECT v.id "
-        "FROM transcript_chunk_fts f "
-        "JOIN transcript_chunk tc ON tc.id = f.rowid "
-        "JOIN video v ON v.id = tc.fk_video_id "
-        "WHERE transcript_chunk_fts MATCH ? "
-        "GROUP BY v.id)",
-        (match_query,),
-    ).fetchone()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM ("
+            "SELECT v.id "
+            "FROM transcript_chunk_fts f "
+            "JOIN transcript_chunk tc ON tc.id = f.rowid "
+            "JOIN video v ON v.id = tc.fk_video_id "
+            "WHERE transcript_chunk_fts MATCH ? "
+            "GROUP BY v.id)",
+            (match_query,),
+        ).fetchone()
+    except ValueError:
+        logger.warning("Requête FTS5 invalide : %s", match_query)
+        return 0
     return int(row[0]) if row else 0
 
 
@@ -137,14 +152,18 @@ def get_video(conn: Any, youtube_str_id: str) -> VideoHit | None:
 
 def count_video_chunks(conn: Any, match_query: str, youtube_str_id: str) -> int:
     """Count total matching chunks for a single video."""
-    row = conn.execute(
-        "SELECT COUNT(*) "
-        "FROM transcript_chunk_fts f "
-        "JOIN transcript_chunk tc ON tc.id = f.rowid "
-        "JOIN video v ON v.id = tc.fk_video_id "
-        "WHERE transcript_chunk_fts MATCH ? AND v.youtube_str_id = ?",
-        (match_query, youtube_str_id),
-    ).fetchone()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) "
+            "FROM transcript_chunk_fts f "
+            "JOIN transcript_chunk tc ON tc.id = f.rowid "
+            "JOIN video v ON v.id = tc.fk_video_id "
+            "WHERE transcript_chunk_fts MATCH ? AND v.youtube_str_id = ?",
+            (match_query, youtube_str_id),
+        ).fetchone()
+    except ValueError:
+        logger.warning("Requête FTS5 invalide : %s", match_query)
+        return 0
     return int(row[0]) if row else 0
 
 
@@ -154,16 +173,20 @@ def search_chunks_by_orientation(conn: Any, match_query: str) -> list[Orientatio
     Results are sorted by ratio descending (highest proportion first).
     Orientations with total == 0 are excluded.
     """
-    matched_rows = conn.execute(
-        "SELECT c.orientation, COUNT(*) AS matched "
-        "FROM transcript_chunk_fts f "
-        "JOIN transcript_chunk tc ON tc.id = f.rowid "
-        "JOIN video v ON v.id = tc.fk_video_id "
-        "LEFT JOIN channel c ON c.id = v.fk_channel_id "
-        "WHERE transcript_chunk_fts MATCH ? "
-        "GROUP BY c.orientation",
-        (match_query,),
-    ).fetchall()
+    try:
+        matched_rows = conn.execute(
+            "SELECT c.orientation, COUNT(*) AS matched "
+            "FROM transcript_chunk_fts f "
+            "JOIN transcript_chunk tc ON tc.id = f.rowid "
+            "JOIN video v ON v.id = tc.fk_video_id "
+            "LEFT JOIN channel c ON c.id = v.fk_channel_id "
+            "WHERE transcript_chunk_fts MATCH ? "
+            "GROUP BY c.orientation",
+            (match_query,),
+        ).fetchall()
+    except ValueError:
+        logger.warning("Requête FTS5 invalide : %s", match_query)
+        return []
 
     total_rows = conn.execute(
         "SELECT c.orientation, COUNT(tc.id) AS total "

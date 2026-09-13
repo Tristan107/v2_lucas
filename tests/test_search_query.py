@@ -26,6 +26,40 @@ class TestBuildMatchQuery:
     def test_three_terms(self) -> None:
         assert build_match_query("a b c") == "a AND b AND c"
 
+    def test_or_two_terms(self) -> None:
+        assert build_match_query("immigr* OR travail*") == "immigr* OR travail*"
+
+    def test_or_and_mixed(self) -> None:
+        assert build_match_query("immigr* OR travail* pénalité") == "immigr* OR travail* AND pénalité"
+
+    def test_parentheses_with_or(self) -> None:
+        assert build_match_query("(éducation OR travail) AND immigr*") == "(éducation OR travail) AND immigr*"
+
+    def test_parentheses_implicit_and(self) -> None:
+        assert build_match_query("immigr* (éducation OR travail)") == "immigr* AND (éducation OR travail)"
+
+    def test_not_operator(self) -> None:
+        assert build_match_query("immigr* NOT chômage") == "immigr* NOT chômage"
+
+    def test_single_quote_escaped(self) -> None:
+        assert build_match_query("l'immigration") == "l immigration"
+
+    def test_case_insensitive_or(self) -> None:
+        assert build_match_query("immigr* or travail*") == "immigr* OR travail*"
+
+    def test_or_at_start_ignored(self) -> None:
+        assert build_match_query("OR test") == "test"
+
+    def test_or_at_end_ignored(self) -> None:
+        assert build_match_query("test OR") == "test"
+
+    def test_empty_after_operators(self) -> None:
+        with pytest.raises(ValueError, match="vide"):
+            build_match_query("OR AND NOT")
+
+    def test_parentheses_implicit_and_between_parens(self) -> None:
+        assert build_match_query("(a OR b) (c OR d)") == "(a OR b) AND (c OR d)"
+
 
 class TestFormatHhmmss:
     def test_zero(self) -> None:

@@ -315,7 +315,7 @@ def render_youtube_page() -> None:
 
     col_search, col_btn = st.columns([5, 1])
     with col_search:
-        raw_query = st.text_input("Rechercher", placeholder="immigr* travail*", label_visibility="collapsed")
+        raw_query = st.text_input("Rechercher", placeholder="immigr* OR travail*", label_visibility="collapsed")
     with col_btn:
         search_clicked = st.button("Rechercher", width="stretch")
 

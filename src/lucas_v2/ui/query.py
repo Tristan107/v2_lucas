@@ -4,13 +4,44 @@ from __future__ import annotations
 def build_match_query(raw: str) -> str:
     """Build FTS5 match query from user input.
 
-    ``'immigr*  travail*'`` becomes ``'immigr* AND travail*'``.
-    Raises ``ValueError`` when input is empty after stripping.
+    Supports explicit ``OR``, ``AND``, ``NOT`` operators (case-insensitive),
+    parentheses, and implicit ``AND`` between adjacent terms.
+    Apostrophes in terms are escaped for FTS5 (``'`` → ``''``).
+    Raises ``ValueError`` when input is empty after processing.
     """
-    tokens = [t for t in raw.split() if t]
+    _OPS: frozenset[str] = frozenset({"OR", "AND", "NOT"})
+
+    tokens = raw.split()
     if not tokens:
         raise ValueError("Requête vide")
-    return " AND ".join(tokens)
+
+    classified: list[tuple[str, str]] = []
+    for t in tokens:
+        upper = t.upper()
+        if upper in _OPS:
+            classified.append(("OP", upper))
+        elif t in ("(", ")"):
+            classified.append(("PAREN", t))
+        else:
+            classified.append(("TERM", " ".join(t.replace("'", " ").split())))
+
+    while classified and classified[0][0] == "OP":
+        classified.pop(0)
+    while classified and classified[-1][0] == "OP":
+        classified.pop()
+
+    if not classified:
+        raise ValueError("Requête vide")
+
+    output = [classified[0][1]]
+    for i in range(1, len(classified)):
+        prev_kind = classified[i - 1][0]
+        curr_kind = classified[i][0]
+        if prev_kind != "OP" and curr_kind != "OP":
+            output.append("AND")
+        output.append(classified[i][1])
+
+    return " ".join(output)
 
 
 def format_hhmmss(total_s: int) -> str:
