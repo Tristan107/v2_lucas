@@ -133,13 +133,51 @@ def _render_prev_next(page_key: str, page: int, total_pages: int) -> None:
             st.rerun()
 
 
+def _render_clickable_thumbnail(youtube_str_id: str) -> None:
+    """Affiche un thumbnail YouTube cliquable qui ouvre la vue détail."""
+    thumb_url = f"https://i.ytimg.com/vi_webp/{youtube_str_id}/default.webp"
+    safe_id = html.escape(youtube_str_id)
+    safe_url = html.escape(thumb_url)
+
+    st.iframe(
+        f"""
+        <style>
+            .thumb-link img {{
+                width: 100%;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: opacity 0.2s;
+            }}
+            .thumb-link:hover img {{
+                opacity: 0.85;
+            }}
+        </style>
+        <a class="thumb-link" href="#" data-video-id="{safe_id}">
+            <img src="{safe_url}" alt="Miniature" />
+        </a>
+        <script>
+        document.querySelector('.thumb-link').addEventListener('click', function(e) {{
+            e.preventDefault();
+            var iframe = window.frameElement;
+            if (!iframe) return;
+            var block = iframe.closest('[data-testid="stHorizontalBlock"]');
+            if (!block) return;
+            var columns = block.querySelectorAll('[data-testid="stColumn"]');
+            if (columns.length >= 2) {{
+                var btn = columns[1].querySelector('button[kind="tertiary"]');
+                if (btn) btn.click();
+            }}
+        }});
+        </script>
+        """,
+        height=120,
+    )
+
+
 def _render_video_row(v: VideoHit) -> None:
     col_thumb, col_content = st.columns([1, 4])
     with col_thumb:
-        st.image(
-            f"https://i.ytimg.com/vi_webp/{v.youtube_str_id}/default.webp",
-            width="stretch",
-        )
+        _render_clickable_thumbnail(v.youtube_str_id)
     with col_content:
         title = v.title or v.youtube_str_id
         if st.button(
