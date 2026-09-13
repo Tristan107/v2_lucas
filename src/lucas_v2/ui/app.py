@@ -75,6 +75,11 @@ def _inject_compact_style() -> None:
                 font-weight: 600 !important;
             }
 
+            /* Thumbnail alignment in video list */
+            div[data-testid="stImage"] {
+                margin-top: 0.15rem !important;
+            }
+
             /* Metadata line pinned directly under title */
             .lucas-meta {
                 font-size: 0.8rem;
@@ -128,20 +133,27 @@ def _render_prev_next(page_key: str, page: int, total_pages: int) -> None:
 
 
 def _render_video_row(v: VideoHit) -> None:
-    title = v.title or v.youtube_str_id
-    if st.button(
-        title,
-        key=f"open_{v.youtube_str_id}",
-        type="tertiary",
-        use_container_width=True,
-    ):
-        st.session_state["selected_video_id"] = v.youtube_str_id
-        st.session_state["chunk_page"] = 0
-        st.rerun()
+    col_thumb, col_content = st.columns([1, 4])
+    with col_thumb:
+        st.image(
+            f"https://i.ytimg.com/vi_webp/{v.youtube_str_id}/default.webp",
+            use_container_width=True,
+        )
+    with col_content:
+        title = v.title or v.youtube_str_id
+        if st.button(
+            title,
+            key=f"open_{v.youtube_str_id}",
+            type="tertiary",
+            use_container_width=True,
+        ):
+            st.session_state["selected_video_id"] = v.youtube_str_id
+            st.session_state["chunk_page"] = 0
+            st.rerun()
 
-    meta = _video_meta_line(v)
-    meta_line = f"{meta} ({v.mentions} mentions)" if meta else f"({v.mentions} mentions)"
-    st.html(f'<div class="lucas-meta">{html.escape(meta_line)}</div>')
+        meta = _video_meta_line(v)
+        meta_line = f"{meta} ({v.mentions} mentions)" if meta else f"({v.mentions} mentions)"
+        st.html(f'<div class="lucas-meta">{html.escape(meta_line)}</div>')
 
 
 def _render_video_list(conn: Any, match_query: str) -> None:
