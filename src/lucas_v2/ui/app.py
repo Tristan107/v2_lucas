@@ -244,8 +244,9 @@ def render_youtube_page() -> None:
 
     _sync_search_state(match_query)
     conn = _get_conn()
-    selected = st.session_state.get("selected_video_id")
-    if selected:
-        _render_video_detail(conn, match_query, str(selected))
-    else:
-        _render_video_list(conn, match_query)
+    with st.spinner("Recherche en cours…"):
+        selected = st.session_state.get("selected_video_id")
+        if selected:
+            _render_video_detail(conn, match_query, str(selected))
+        else:
+            _render_video_list(conn, match_query)
