@@ -60,7 +60,7 @@ def _inject_compact_style() -> None:
                 justify-content: flex-start !important;
                 align-items: flex-start !important;
                 text-align: left !important;
-                font-size: 1.15rem !important;
+                font-size: 1.45rem !important;
                 font-weight: 600 !important;
                 line-height: 1.35 !important;
                 padding: 0 !important;
@@ -73,6 +73,7 @@ def _inject_compact_style() -> None:
                 text-align: left !important;
                 justify-content: flex-start !important;
                 font-weight: 600 !important;
+                font-size: inherit !important;
             }
 
             /* Thumbnail alignment in video list */
@@ -82,7 +83,7 @@ def _inject_compact_style() -> None:
 
             /* Metadata line pinned directly under title */
             .lucas-meta {
-                font-size: 0.8rem;
+                font-size: 1.0rem;
                 margin-top: -0.15rem !important;
                 margin-bottom: 0.75rem !important;
                 color: #666;
@@ -137,7 +138,7 @@ def _render_video_row(v: VideoHit) -> None:
     with col_thumb:
         st.image(
             f"https://i.ytimg.com/vi_webp/{v.youtube_str_id}/default.webp",
-            use_container_width=True,
+            width="stretch",
         )
     with col_content:
         title = v.title or v.youtube_str_id
@@ -145,7 +146,7 @@ def _render_video_row(v: VideoHit) -> None:
             title,
             key=f"open_{v.youtube_str_id}",
             type="tertiary",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state["selected_video_id"] = v.youtube_str_id
             st.session_state["chunk_page"] = 0
@@ -177,7 +178,7 @@ def _render_video_list(conn: Any, match_query: str) -> None:
 def _render_chunk_row(ch: ChunkHit) -> None:
     col_ts, col_snippet = st.columns([1, 5])
     with col_ts:
-        st.link_button(format_hhmmss(ch.start_s), youtube_url(ch.youtube_str_id, ch.start_s), use_container_width=True)
+        st.link_button(format_hhmmss(ch.start_s), youtube_url(ch.youtube_str_id, ch.start_s), width="stretch")
     with col_snippet:
         st.markdown(ch.snippet)
 
@@ -228,7 +229,7 @@ def render_youtube_page() -> None:
     with col_search:
         raw_query = st.text_input("Rechercher", placeholder="immigr* travail*", label_visibility="collapsed")
     with col_btn:
-        search_clicked = st.button("Rechercher", use_container_width=True)
+        search_clicked = st.button("Rechercher", width="stretch")
 
     if not search_clicked and not raw_query:
         return

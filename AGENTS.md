@@ -115,6 +115,7 @@ uv run pyright
 - **Errors**: Custom exceptions (RateLimitedError, AbortIngestion)
 - **Config**: `.env` for secrets (never committed), `channels.yaml` for channel list
 - **DB pattern**: DbConn wrapper handles Turso stream expiry with auto-reconnect
+- **Streamlit**: Ne jamais utiliser `use_container_width=True` (déprécié). Utiliser `width="stretch"` à la place.
 
 ---
 
