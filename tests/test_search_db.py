@@ -7,7 +7,14 @@ import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSourc
 from lucas_v2.db import Chunk
 from lucas_v2.db.operations import replace_chunks, upsert_channel, upsert_video
 from lucas_v2.db.schema import init_schema
-from lucas_v2.ui.db_search import count_video_chunks, count_videos, get_video, search_video_chunks, search_videos
+from lucas_v2.ui.db_search import (
+    count_video_chunks,
+    count_videos,
+    get_video,
+    search_chunks_by_orientation,
+    search_video_chunks,
+    search_videos,
+)
 
 
 def _conn() -> Any:
@@ -155,3 +162,49 @@ def test_get_video() -> None:
     assert v.title == "Vidéo ancienne"
     assert v.owner == "Alice"
     assert get_video(conn, "unknown") is None
+
+
+def test_search_chunks_by_orientation_single() -> None:
+    conn = _conn()
+    _seed(conn)
+    stats = search_chunks_by_orientation(conn, "travail")
+    assert len(stats) == 1
+    s = stats[0]
+    assert s.orientation == "gauche"
+    assert s.matched == 4
+    assert s.total == 5
+
+
+def test_search_chunks_by_orientation_multi() -> None:
+    conn = _conn()
+    ch_gauche = upsert_channel(conn, "https://yt.com/ch1", "UC1", "Chaîne G", "gauche", "Alice")
+    ch_droite = upsert_channel(conn, "https://yt.com/ch2", "UC2", "Chaîne D", "droite", "Bob")
+
+    vid_g = upsert_video(conn, ch_gauche, "vidG", "Vid G", "20250101", 120, "fr", "manual", "ok", None)
+    vid_d = upsert_video(conn, ch_droite, "vidD", "Vid D", "20250101", 120, "fr", "manual", "ok", None)
+
+    replace_chunks(conn, vid_g, [
+        Chunk(seq_no=0, start_s=0, end_s=5, text="le travail est important", tokens=4),
+        Chunk(seq_no=1, start_s=6, end_s=10, text="travail et société", tokens=3),
+        Chunk(seq_no=2, start_s=11, end_s=15, text="autre sujet", tokens=2),
+    ])
+    replace_chunks(conn, vid_d, [
+        Chunk(seq_no=0, start_s=0, end_s=5, text="le travail des citoyens", tokens=4),
+    ])
+    conn.commit()
+
+    stats = search_chunks_by_orientation(conn, "travail")
+    assert len(stats) == 2
+    by_orient = {s.orientation: s for s in stats}
+    assert by_orient["gauche"].matched == 2
+    assert by_orient["gauche"].total == 3
+    assert by_orient["droite"].matched == 1
+    assert by_orient["droite"].total == 1
+    assert stats[0].matched / stats[0].total >= stats[1].matched / stats[1].total
+
+
+def test_search_chunks_by_orientation_empty() -> None:
+    conn = _conn()
+    _seed(conn)
+    stats = search_chunks_by_orientation(conn, "zzzznonexistent")
+    assert stats == []

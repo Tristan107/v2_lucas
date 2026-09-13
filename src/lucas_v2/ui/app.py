@@ -15,6 +15,7 @@ from lucas_v2.ui.db_search import (
     count_video_chunks,
     count_videos,
     get_video,
+    search_chunks_by_orientation,
     search_video_chunks,
     search_videos,
 )
@@ -195,11 +196,60 @@ def _render_video_row(v: VideoHit) -> None:
         st.html(f'<div class="lucas-meta">{html.escape(meta_line)}</div>')
 
 
+ORIENTATION_COLORS: dict[str, str] = {
+    "extrême gauche": "#B22222",
+    "gauche": "#E63946",
+    "centre gauche": "#F4A9A8",
+    "centre droit": "#A8C8E8",
+    "droite": "#1D3557",
+    "extrême droite": "#2D2D2D",
+}
+_DEFAULT_COLOR = "#999999"
+
+
+def _orientation_color(orientation: str | None) -> str:
+    return ORIENTATION_COLORS.get(orientation or "", _DEFAULT_COLOR)
+
+
+def _render_orientation_breakdown(conn: Any, match_query: str) -> None:
+    stats = search_chunks_by_orientation(conn, match_query)
+    stats = [s for s in stats if s.total > 0]
+    if not stats:
+        return
+
+    rows_html = ""
+    for s in stats:
+        color = _orientation_color(s.orientation)
+        pct = s.matched / s.total * 100
+        bar_width = min(pct, 100)
+        label = s.orientation or "non classé"
+        rows_html += (
+            f'<div style="margin-bottom:6px">'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">'
+            f'<span style="font-size:0.85rem;color:{color};font-weight:600">{html.escape(label)}</span>'
+            f'<span style="font-size:0.78rem;color:#888">{s.matched}/{s.total} <b style="color:{color}">{pct:.1f}%</b></span>'
+            f'</div>'
+            f'<div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden">'
+            f'<div style="background:{color};height:100%;width:{bar_width:.1f}%;border-radius:4px"></div>'
+            f'</div>'
+            f'</div>'
+        )
+
+    st.html(
+        f'<div style="margin-bottom:0.75rem">'
+        f'<div style="font-size:0.85rem;font-weight:600;color:#444;margin-bottom:6px">Répartition par orientation</div>'
+        f'{rows_html}'
+        f'</div>'
+    )
+
+
 def _render_video_list(conn: Any, match_query: str) -> None:
     total = count_videos(conn, match_query)
     if total == 0:
         st.info("Aucun résultat trouvé.")
         return
+
+    _render_orientation_breakdown(conn, match_query)
 
     total_pages = max(1, math.ceil(total / VIDEOS_PER_PAGE))
     page = int(st.session_state.get("video_page", 0))

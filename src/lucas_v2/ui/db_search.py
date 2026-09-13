@@ -25,6 +25,13 @@ class ChunkHit:
     youtube_str_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class OrientationStats:
+    orientation: str | None
+    matched: int
+    total: int
+
+
 def search_videos(conn: Any, match_query: str, limit: int = 10, offset: int = 0) -> list[VideoHit]:
     """Return distinct videos whose chunks match *match_query*.
 
@@ -139,3 +146,42 @@ def count_video_chunks(conn: Any, match_query: str, youtube_str_id: str) -> int:
         (match_query, youtube_str_id),
     ).fetchone()
     return int(row[0]) if row else 0
+
+
+def search_chunks_by_orientation(conn: Any, match_query: str) -> list[OrientationStats]:
+    """Return per-orientation chunk counts: matched (FTS) vs total (all chunks in DB).
+
+    Results are sorted by ratio descending (highest proportion first).
+    Orientations with total == 0 are excluded.
+    """
+    matched_rows = conn.execute(
+        "SELECT c.orientation, COUNT(*) AS matched "
+        "FROM transcript_chunk_fts f "
+        "JOIN transcript_chunk tc ON tc.id = f.rowid "
+        "JOIN video v ON v.id = tc.fk_video_id "
+        "LEFT JOIN channel c ON c.id = v.fk_channel_id "
+        "WHERE transcript_chunk_fts MATCH ? "
+        "GROUP BY c.orientation",
+        (match_query,),
+    ).fetchall()
+
+    total_rows = conn.execute(
+        "SELECT c.orientation, COUNT(tc.id) AS total "
+        "FROM transcript_chunk tc "
+        "JOIN video v ON v.id = tc.fk_video_id "
+        "LEFT JOIN channel c ON c.id = v.fk_channel_id "
+        "GROUP BY c.orientation",
+    ).fetchall()
+
+    totals: dict[str | None, int] = {r[0]: int(r[1]) for r in total_rows}
+
+    stats: list[OrientationStats] = []
+    for r in matched_rows:
+        orient = r[0]
+        matched = int(r[1])
+        total = totals.get(orient, 0)
+        if total > 0:
+            stats.append(OrientationStats(orientation=orient, matched=matched, total=total))
+
+    stats.sort(key=lambda s: s.matched / s.total, reverse=True)
+    return stats
