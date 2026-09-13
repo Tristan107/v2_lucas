@@ -1,28 +1,18 @@
-# Lucas v2 — Ingestion transcripts YouTube → Turso
+# Lucas v2 — Veille politique YouTube
 
-Outil d'ingestion de transcripts de vidéos YouTube : découverte des vidéos via
-l'API YouTube Data v3, téléchargement des sous-titres FR via `yt-dlp`,
-regroupement en paquets phrase(s) et stockage dans une base SQLite hébergée
-sur Turso (libSQL).
+Outil de veille politique pour Lucas et ses amis : collecte automatique
+des transcripts de vidéos YouTube de chaînes politiques françaises,
+rendus interrogeables via une interface web.
+
+Créé en vue de l'élection présidentielle de 2027, Lucas v2 permet de
+suivre et chercher dans le discours politique diffusé sur YouTube.
 
 ## Fonctionnement
 
-1. **Configuration** : fichier YAML listant les chaînes YouTube à scraper
-   (`max_videos`, `since_days` paramétrables par chaîne, défaut = dernière vidéo).
-2. **Discovery** (`youtube_api.py`) : résolution `@Handle` → `channelId`,
-   lecture de la playlist `uploads`, récupération des métadonnées
-   (`title`, `publishedAt`, `duration`).
-3. **Sous-titres** (`subs.py`) : téléchargement SRT via `yt-dlp`
-   (`sublangs fr.*`, manuels puis auto-générés, `skip_download`).
-4. **Parsing** (`srt.py`) : cues SRT → texte nettoyé (tags/positions supprimés),
-   timestamps convertis en **secondes** (`start_s`, `end_s`).
-5. **Chunking** (`chunking.py`) : regroupement jusqu'à ponctuation `.` ou `;`,
-   sans dépasser **128 tokens** (compteur whitespace V1, `count_tokens()` isolée
-   pour brancher `tiktoken` plus tard).
-6. **Stockage** (`db.py`) : 3 tables Turso — `channels`, `videos`
-   (avec `status`: `ok` / `no_subs` / `error`), `transcript_chunks`
-   (`video_id`, `seq_no`, `start_s`, `end_s`, `text`, `tokens`).
-   Upserts idempotents, rejeu sans doublon.
+1. **Chaînes** : un fichier YAML définit les chaînes YouTube à suivre
+2. **Collecte** : les vidéos et sous-titres français sont récupérés automatiquement
+3. **Indexation** : les transcripts sont découpés en segments et stockés dans une base de données
+4. **Recherche** : une interface web permet de chercher dans tous les transcripts avec liens YouTube
 
 ## Prérequis
 
@@ -87,10 +77,9 @@ uv run lucas-v2 ingest --help
 
 ## Recherche Streamlit (IHM)
 
-Interface web pour rechercher dans les transcripts ingérés via l'index FTS5.
+Interface web pour rechercher dans les transcripts ingérés.
 
 ```bash
-# Lancer l'app (nécessite TURSO_DATABASE_URL + TURSO_AUTH_TOKEN dans .env)
 uv run streamlit run streamlit_app.py
 ```
 
@@ -99,68 +88,10 @@ uv run streamlit run streamlit_app.py
 - Liste des vidéos triées par date décroissante avec compteur de mentions
 - Panneau dépliant par vidéo : chunks matchés avec gras natif `**...**`
 - Timestamp `hh:mm:ss` cliquable → ouvre YouTube au bon moment
-- Pagination "Voir plus" (+10 chunks)
-
-**Déploiement Streamlit Cloud :** ajouter `TURSO_DATABASE_URL` et `TURSO_AUTH_TOKEN` dans les Secrets de l'app.
-
-## Exemple de recherche SQL
-
-```sql
-SELECT tc.seq_no, tc.start_s, tc.end_s,
-       snippet(transcript_chunk_fts, 0, '<b>', '</b>', '…', 12) AS extrait,
-       tc."text",
-       bm25(transcript_chunk_fts) AS rank,
-       'https://www.youtube.com/watch?v=' || v.youtube_str_id || '&t=' || tc.start_s AS video_link, v.title
-FROM transcript_chunk_fts
-JOIN transcript_chunk tc ON tc.id = transcript_chunk_fts.rowid
-JOIN video v ON v.id = tc.fk_video_id
-WHERE transcript_chunk_fts MATCH 'boulot*'
-ORDER BY rank
-LIMIT 20;
-```
-
-Le lien `video_link` produit une URL directe vers le début du chunk
-(ex. `https://www.youtube.com/watch?v=abc123&t=95`).
+- Pagination « Voir plus » (+10 chunks)
 
 ## Tests
 
 ```bash
 uv run pytest tests/ -v
 ```
-
-## Structure
-
-```
-src/lucas_v2/
-  __init__.py      # CLI click (ingest)
-  config.py        # load_channels()
-  youtube_api.py   # discovery API v3
-  subs.py          # download SRT via yt-dlp
-  srt.py           # parsing SRT → secondes
-  chunking.py      # regroupement phrases, 128 tokens max
-  db.py            # connexion Turso, schéma, upserts
-  schema.sql       # DDL Turso (FTS5, triggers)
-  ui/
-    __init__.py
-    query.py       # helpers purs (AND, hhmmss, url)
-    db_search.py   # requêtes FTS groupées (videos, chunks)
-    app.py         # Streamlit render_app()
-streamlit_app.py   # point d'entrée Streamlit
-tests/test_srt_chunk.py
-tests/test_search_query.py
-tests/test_search_db.py
-```
-
-Plan détaillé : `.opencode/plans/yt-dlp-transcripts-turso.md`
-
-Biggest channel (Mélenchon) :
-
-2007 regular videos
-156 shorts
-1110.2 hours of regular video content
-
-Turso limits :
-
-Metric	Max Capacity in Turso Free Tier
-Total Transcript Time	~138,500,000 seconds (~38,470 hours)
-Total Videos	~125,000 videos
