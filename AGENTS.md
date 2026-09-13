@@ -208,3 +208,23 @@ channels:
 - Total Transcript Time: ~138,500,000 seconds (~38,470 hours)
 - Total Videos: ~125,000 videos
 - Largest channel (Mélenchon): ~2007 videos, ~1110h content → well within limits
+
+---
+
+## 11. UI Details
+
+### Thumbnails YouTube
+
+Les thumbnails des vidéos ne sont **pas stockées en base**. Elles sont construites dynamiquement à partir du `youtube_str_id` via l'URL publique YouTube :
+
+```
+https://i.ytimg.com/vi_webp/{youtube_str_id}/default.webp
+```
+
+**Affichage** : Dans la liste de résultats de recherche (`_render_video_row` dans `ui/app.py`), chaque vidéo est affichée avec :
+- Une miniature à gauche (colonne 1/5 via `st.columns([1, 4])`)
+- Le titre, la date, la chaîne, l'orientation et le nombre de mentions à droite
+
+**CSS** : Le style `.lucas-meta` aligne la ligne de métadonnées sous le titre, avec un léger décalage négatif (`margin-top: -0.15rem`) pour coller au titre.
+
+**Non utilisées** dans la vue détail d'une vidéo (`_render_video_detail`).
