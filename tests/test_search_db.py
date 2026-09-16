@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
@@ -208,3 +209,44 @@ def test_search_chunks_by_orientation_empty() -> None:
     _seed(conn)
     stats = search_chunks_by_orientation(conn, "zzzznonexistent")
     assert stats == []
+
+
+def test_error_fts_syntax_logs_warning(caplog: Any) -> None:
+    conn = _conn()
+
+    class _Conn:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(conn, name)
+
+        def execute(self, *args: Any, **kwargs: Any) -> Any:
+            raise ValueError("fts5: syntax err")
+
+    with caplog.at_level(logging.WARNING, logger="lucas_v2"):
+        result = search_videos(_Conn(), "feu*")
+    assert result == []
+    assert "Requête FTS5 invalide" in caplog.text
+
+
+def test_error_transitoire_logs_error(caplog: Any) -> None:
+    conn = _conn()
+
+    class _Conn:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(conn, name)
+
+        def execute(self, *args: Any, **kwargs: Any) -> Any:
+            raise ValueError("network timeout")
+
+    with caplog.at_level(logging.ERROR, logger="lucas_v2"):
+        result = search_videos(_Conn(), "feu*")
+    assert result == []
+    assert "network timeout" in caplog.text
+
+
+def test_valid_query_no_error_log(caplog: Any) -> None:
+    conn = _conn()
+    _seed(conn)
+    with caplog.at_level(logging.WARNING, logger="lucas_v2"):
+        result = search_videos(conn, "travail")
+    assert len(result) == 2
+    assert "Requête FTS5 invalide" not in caplog.text

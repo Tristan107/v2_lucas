@@ -9,6 +9,19 @@ logger = logging.getLogger("lucas_v2")
 SNIPPET_TOKENS: Final[int] = 15
 
 
+def _log_fts_error(match_query: str, e: ValueError) -> None:
+    """Classe et logge les erreurs ValueError des requêtes FTS5."""
+    err_msg = str(e).lower()
+    if "fts5" in err_msg or "syntax" in err_msg:
+        logger.warning("Requête FTS5 invalide : %s", match_query)
+    else:
+        logger.error(
+            "Erreur de connexion lors de la recherche FTS5 (query=%s) : %s",
+            match_query,
+            e,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class VideoHit:
     youtube_str_id: str
@@ -55,8 +68,8 @@ def search_videos(conn: Any, match_query: str, limit: int = 10, offset: int = 0)
             "LIMIT ? OFFSET ?",
             (match_query, limit, offset),
         ).fetchall()
-    except ValueError:
-        logger.warning("Requête FTS5 invalide : %s", match_query)
+    except ValueError as e:
+        _log_fts_error(match_query, e)
         return []
     return [
         VideoHit(
@@ -92,8 +105,8 @@ def search_video_chunks(
             "LIMIT ? OFFSET ?",
             (match_query, youtube_str_id, limit, offset),
         ).fetchall()
-    except ValueError:
-        logger.warning("Requête FTS5 invalide : %s", match_query)
+    except ValueError as e:
+        _log_fts_error(match_query, e)
         return []
     return [
         ChunkHit(
@@ -120,8 +133,8 @@ def count_videos(conn: Any, match_query: str) -> int:
             "GROUP BY v.id)",
             (match_query,),
         ).fetchone()
-    except ValueError:
-        logger.warning("Requête FTS5 invalide : %s", match_query)
+    except ValueError as e:
+        _log_fts_error(match_query, e)
         return 0
     return int(row[0]) if row else 0
 
@@ -161,8 +174,8 @@ def count_video_chunks(conn: Any, match_query: str, youtube_str_id: str) -> int:
             "WHERE transcript_chunk_fts MATCH ? AND v.youtube_str_id = ?",
             (match_query, youtube_str_id),
         ).fetchone()
-    except ValueError:
-        logger.warning("Requête FTS5 invalide : %s", match_query)
+    except ValueError as e:
+        _log_fts_error(match_query, e)
         return 0
     return int(row[0]) if row else 0
 
@@ -184,8 +197,8 @@ def search_chunks_by_orientation(conn: Any, match_query: str) -> list[Orientatio
             "GROUP BY c.orientation",
             (match_query,),
         ).fetchall()
-    except ValueError:
-        logger.warning("Requête FTS5 invalide : %s", match_query)
+    except ValueError as e:
+        _log_fts_error(match_query, e)
         return []
 
     total_rows = conn.execute(
