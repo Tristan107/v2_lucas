@@ -109,8 +109,6 @@ if "current_page" not in st.session_state:
 
 page = st.session_state["current_page"]
 if page == "youtube":
-    if st.button("← Accueil"):
-        _navigate_to("home")
     render_youtube_page()
 elif page == "sondages":
     render_sondages_page()

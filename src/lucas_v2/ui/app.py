@@ -284,12 +284,12 @@ def _render_video_detail(conn: Any, match_query: str, youtube_str_id: str) -> No
     title = v.title or v.youtube_str_id
     st.html(f'<h2 style="font-size:1.3em;font-weight:bold;text-align:left;">{html.escape(title)}</h2>')
 
+    total = count_video_chunks(conn, match_query, youtube_str_id)
+
     meta = _video_meta_line(v)
     if meta:
-        st.caption(f"{meta} • {v.mentions} segments")
-    st.link_button("Voir sur YouTube", f"https://www.youtube.com/watch?v={v.youtube_str_id}")
+        st.caption(f"{meta} • {total} extraits sur {v.mentions}")
 
-    total = count_video_chunks(conn, match_query, youtube_str_id)
     if total == 0:
         st.info("Aucun extrait pour cette recherche dans cette vidéo.")
         return
@@ -299,13 +299,15 @@ def _render_video_detail(conn: Any, match_query: str, youtube_str_id: str) -> No
     page = max(0, min(page, total_pages - 1))
     st.session_state["chunk_page"] = page
 
-    st.caption(f"{total} extraits — Page {page + 1} sur {total_pages}")
     chunks: list[ChunkHit] = search_video_chunks(
         conn, match_query, youtube_str_id, limit=CHUNKS_PER_PAGE, offset=page * CHUNKS_PER_PAGE
     )
-    for ch in chunks:
+    for i, ch in enumerate(chunks):
         _render_chunk_row(ch)
-    st.divider()
+        if i < len(chunks) - 1:
+            st.html("<div style='margin-bottom:0.5rem'></div>")
+
+    st.html("<div style='margin-bottom:0.5rem'></div>")
     _render_prev_next("chunk_page", page, total_pages)
 
 
@@ -313,9 +315,25 @@ def render_youtube_page() -> None:
     _inject_compact_style()
     _render_youtube_header()
 
+    selected = st.session_state.get("selected_video_id")
+
+    if selected:
+        conn = _get_conn()
+        match_query = str(st.session_state.get("last_match_query", ""))
+        with st.spinner("Recherche en cours…"):
+            _render_video_detail(conn, match_query, str(selected))
+        return
+
+    previous_query = str(st.session_state.get("last_match_query", ""))
+
     col_search, col_btn = st.columns([5, 1])
     with col_search:
-        raw_query = st.text_input("Rechercher", placeholder="immigr* OR travail*", label_visibility="collapsed")
+        raw_query = st.text_input(
+            "Rechercher",
+            placeholder="immigr* OR travail*",
+            label_visibility="collapsed",
+            value=previous_query,
+        )
     with col_btn:
         search_clicked = st.button("Rechercher", width="stretch")
 
@@ -333,8 +351,4 @@ def render_youtube_page() -> None:
     _sync_search_state(match_query)
     conn = _get_conn()
     with st.spinner("Recherche en cours…"):
-        selected = st.session_state.get("selected_video_id")
-        if selected:
-            _render_video_detail(conn, match_query, str(selected))
-        else:
-            _render_video_list(conn, match_query)
+        _render_video_list(conn, match_query)
