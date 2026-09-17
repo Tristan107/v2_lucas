@@ -1,0 +1,11 @@
+stages:
+  - sync
+
+sync_to_github:
+  stage: sync
+  image: alpine/git:latest
+  only:
+    - main
+  script:
+    - git remote add github https://Tristan107:${GITHUB_TOKEN}@github.com/Tristan107/v2_lucas.git
+    - git push --force github main
