@@ -12,8 +12,6 @@ env/
 # uv local cache and state
 .uv/
 
-# OpenCode / IDE local cache
-.opencode/
 
 # Distribution / packaging
 build/
