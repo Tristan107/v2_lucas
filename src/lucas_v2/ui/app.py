@@ -27,7 +27,9 @@ CHUNKS_PER_PAGE = 10
 
 @st.cache_resource
 def _get_conn() -> Any:
-    load_dotenv(Path(".env"))
+    env_path = Path(".env")
+    if env_path.exists():
+        load_dotenv(env_path)
     return connect()
 
 

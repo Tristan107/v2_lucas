@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Any
 
-import libsql_experimental as libsql  # pyright: ignore[reportMissingModuleSource]
+import libsql as libsql  # pyright: ignore[reportMissingModuleSource]
 
 logger: logging.Logger = logging.getLogger("lucas_v2")
 

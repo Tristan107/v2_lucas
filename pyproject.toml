@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "click>=8.5.0",
     "google-api-python-client>=2.200.0",
-    "libsql-experimental>=0.0.55",
+    "libsql>=0.1.11",
     "pandas>=3.0.5",
     "python-dotenv>=1.2.3",
     "pyyaml>=6.0.3",
