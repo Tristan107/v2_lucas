@@ -116,6 +116,7 @@ uv run pyright
 - **Config**: `.env` for secrets (never committed), `channels.yaml` for channel list
 - **DB pattern**: DbConn wrapper handles Turso stream expiry with auto-reconnect
 - **Streamlit**: Ne jamais utiliser `use_container_width=True` (déprécié). Utiliser `width="stretch"` à la place.
+- **Streamlit CSS**: À partir de la v1.63, les composants utilisent React Aria. Pour cibler les états focus dans le CSS custom, utiliser l'attribut `[data-focus-within]` (ex: `div[data-testid="stSelectbox"] [data-focus-within]`) et non le pseudo-class `:focus-within`. Les anciens sélecteurs `div[data-baseweb="select"]` ne fonctionnent plus.
 
 ---
 

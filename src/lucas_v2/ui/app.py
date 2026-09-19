@@ -66,6 +66,16 @@ def _inject_compact_style() -> None:
                 box-shadow: 0 0 0 1px #457B9D !important;
             }
 
+            /* Override selectbox focus border color */
+            div[data-testid="stSelectbox"] [data-focus-within] {
+                border-color: #457B9D !important;
+                box-shadow: 0 0 0 1px #457B9D !important;
+            }
+            /* Override selectbox clear button border */
+            div[data-testid="stSelectbox"] button[aria-label="Clear value"] {
+                border-color: #457B9D !important;
+            }
+
             /* Adjust vertical layout spacing */
             div[data-testid="stVerticalBlock"] { gap: 0rem !important; }
             div[data-testid="stCaptionContainer"] { margin-bottom: 0.5rem !important; }
