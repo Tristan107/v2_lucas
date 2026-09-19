@@ -26,6 +26,21 @@ from lucas_v2.ui.query import build_match_query, format_date_fr, format_hhmmss, 
 VIDEOS_PER_PAGE = 10
 CHUNKS_PER_PAGE = 10
 
+_PARTICLES = {"de", "du", "des", "le", "la", "les"}
+
+
+def _parse_owner_name(raw: str) -> str:
+    """Convertit 'Jordan Bardella' en 'Bardella (Jordan)' pour l'affichage."""
+    parts = raw.strip().split()
+    if len(parts) < 2:
+        return raw
+    idx = len(parts) - 1
+    while idx > 0 and parts[idx - 1].lower() in _PARTICLES:
+        idx -= 1
+    last_name = " ".join(parts[idx:])
+    first_name = " ".join(parts[:idx])
+    return f"{last_name} ({first_name})"
+
 
 @st.cache_resource
 def _get_conn() -> Any:
@@ -285,7 +300,14 @@ def _render_channel_breakdown(conn: Any, match_query: str) -> None:
         if s.owner and s.owner not in seen_owners:
             seen_owners.add(s.owner)
             unique_stats.append(s)
-    options = ["Toutes"] + [s.owner for s in unique_stats]
+
+    display_to_raw: dict[str, str] = {}
+    for s in unique_stats:
+        dn = _parse_owner_name(s.owner or "")
+        display_to_raw[dn] = s.owner  # type: ignore[assignment]
+
+    sorted_display = sorted(display_to_raw.keys(), key=lambda n: n.split("(")[0].strip().casefold())
+    options = ["Toutes"] + sorted_display
 
     owner_orientation: dict[str, str | None] = {}
     for s in stats:
@@ -294,7 +316,12 @@ def _render_channel_breakdown(conn: Any, match_query: str) -> None:
     st.session_state["owner_orientation"] = owner_orientation
 
     current = st.session_state.get("owner_filter")
-    index = 0 if current is None else options.index(current) if current in options else 0
+    if current is None:
+        index = 0
+    else:
+        reverse_map = {v: k for k, v in display_to_raw.items()}
+        current_display = reverse_map.get(current, "")
+        index = options.index(current_display) if current_display in options else 0
     selected = st.selectbox(
         "Filtrer par candidat",
         options,
@@ -306,7 +333,7 @@ def _render_channel_breakdown(conn: Any, match_query: str) -> None:
     if selected == "Toutes":
         st.session_state["owner_filter"] = None
     else:
-        st.session_state["owner_filter"] = selected
+        st.session_state["owner_filter"] = display_to_raw.get(selected)
 
 
 def _render_active_filters() -> None:

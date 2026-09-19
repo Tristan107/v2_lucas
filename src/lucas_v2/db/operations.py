@@ -40,7 +40,8 @@ def upsert_channel(conn: Any, channel_url: str, channel_id: str | None,
                    owner: str | None) -> int:
     """Upsert channel, retourne l'id local (channel.id) pour la FK video."""
     conn.execute(
-        "INSERT INTO channel (channel_url, channel_id, title, orientation, owner) VALUES (?, ?, ?, ?, ?) "
+        "INSERT INTO channel (channel_url, channel_id, title, orientation, owner) "
+        "VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT(channel_url) DO UPDATE SET "
         "channel_id=excluded.channel_id, title=excluded.title, orientation=excluded.orientation, "
         "owner=COALESCE(excluded.owner, channel.owner)",
