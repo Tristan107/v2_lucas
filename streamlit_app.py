@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 from lucas_v2.ui.app import render_youtube_page
+from lucas_v2.ui.components import render_version_badge
 
 IMG_DIR = Path(__file__).parent / "src" / "lucas_v2" / "ui" / "img"
 
@@ -35,6 +36,7 @@ def render_homepage() -> None:
         </style>
         """
     )
+    render_version_badge()
 
     st.html(
         f"""
@@ -82,6 +84,7 @@ def render_homepage() -> None:
 def render_sondages_page() -> None:
     if st.button("← Accueil"):
         _navigate_to("home")
+    render_version_badge()
     st.html(
         """
         <div style="text-align:center;margin-top:2rem;">

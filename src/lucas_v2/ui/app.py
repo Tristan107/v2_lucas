@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import streamlit as st
 
 from lucas_v2.db.connection import connect
+from lucas_v2.ui.components import render_version_badge
 from lucas_v2.ui.db_search import (
     ChannelStats,
     ChunkHit,
@@ -495,6 +496,7 @@ def _render_video_detail(conn: Any, match_query: str, youtube_str_id: str) -> No
 def render_youtube_page() -> None:
     _inject_compact_style()
     _render_youtube_header()
+    render_version_badge()
 
     selected = st.session_state.get("selected_video_id")
 
