@@ -160,7 +160,6 @@ def _sync_search_state(match_query: str) -> None:
         st.session_state["video_page"] = 0
         st.session_state["selected_video_id"] = None
         st.session_state["chunk_page"] = 0
-        st.session_state["owner_filter"] = None
 
 
 def _video_meta_line(v: VideoHit) -> str:
@@ -295,6 +294,8 @@ def _render_channel_breakdown(conn: Any, match_query: str) -> None:
     stats = search_chunks_by_channel(conn, match_query)
     stats = [s for s in stats if s.total > 0 and s.owner is not None]
     if not stats:
+        st.session_state["owner_filter"] = None
+        st.session_state.pop("owner_selectbox", None)
         return
 
     rows_html = ""
@@ -344,16 +345,26 @@ def _render_channel_breakdown(conn: Any, match_query: str) -> None:
     st.session_state["owner_orientation"] = owner_orientation
 
     current = st.session_state.get("owner_filter")
-    if current is None:
-        index = 0
-    else:
-        reverse_map = {v: k for k, v in display_to_raw.items()}
-        current_display = reverse_map.get(current, "")
-        index = options.index(current_display) if current_display in options else 0
+    reverse_map = {v: k for k, v in display_to_raw.items()}
+
+    # Une valeur de widget déjà présente et valide (dans les options) fait foi :
+    # elle reflète une interaction utilisateur récente sur le dropdown. Pendant ce
+    # run, owner_filter contient encore l'ancienne valeur, donc resynchroniser le
+    # widget dessus écraserait la sélection de l'utilisateur. On ne resynchronise
+    # que si la valeur est absente (premier rendu) ou périmée (candidat disparu du
+    # breakdown après changement de thème ou de recherche).
+    widget_value = st.session_state.get("owner_selectbox")
+    if widget_value not in options:
+        current_display = reverse_map.get(current) if current else None
+        if current_display not in options:
+            current_display = None
+        target = current_display or "Toutes"
+        if widget_value != target:
+            st.session_state["owner_selectbox"] = target
+
     selected = st.selectbox(
         "Filtrer par candidat",
         options,
-        index=index,
         key="owner_selectbox",
         accept_new_options=False,
         filter_mode=None,
@@ -407,7 +418,6 @@ def _render_preset_row() -> None:
                 st.session_state["last_match_query"] = match_query
                 st.session_state["video_page"] = 0
                 st.session_state["chunk_page"] = 0
-                st.session_state["owner_filter"] = None
                 st.rerun()
 
 
