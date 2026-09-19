@@ -47,3 +47,4 @@ sonar_issues.json
 
 # Logs
 logs/
+.playwright-mcp/

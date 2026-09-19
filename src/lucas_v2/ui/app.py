@@ -124,7 +124,9 @@ def _inject_compact_style() -> None:
 
             /* Tous les boutons en gras (même poids que les noms de candidats) */
             div[data-testid="stButton"] button,
-            div[data-testid="stLinkButton"] a {
+            div[data-testid="stButton"] button *,
+            div[data-testid="stLinkButton"] a,
+            div[data-testid="stLinkButton"] a * {
                 font-weight: 600 !important;
             }
 
