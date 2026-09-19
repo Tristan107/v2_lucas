@@ -60,6 +60,28 @@ class TestBuildMatchQuery:
     def test_parentheses_implicit_and_between_parens(self) -> None:
         assert build_match_query("(a OR b) (c OR d)") == "(a OR b) AND (c OR d)"
 
+    def test_quoted_phrase_preserved(self) -> None:
+        assert build_match_query('"sécurité sociale"') == '"sécurité sociale"'
+
+    def test_quoted_phrase_or_unchanged(self) -> None:
+        assert build_match_query('"Mix énergétique" OR nucleaire*') == '"Mix énergétique" OR nucleaire*'
+
+    def test_quoted_long_phrase_or_unchanged(self) -> None:
+        assert build_match_query('"centre de rétention administrative" OR OQTF') == '"centre de rétention administrative" OR OQTF'
+
+    def test_quoted_phrase_prefix(self) -> None:
+        assert build_match_query('"sans-papier"*') == '"sans-papier"*'
+        assert build_match_query('"transition écolo"*') == '"transition écolo"*'
+
+    def test_two_quoted_phrases_implicit_and(self) -> None:
+        assert build_match_query('"a b" "c d"') == '"a b" AND "c d"'
+
+    def test_quoted_operator_stays_term(self) -> None:
+        assert build_match_query('"AND" test') == '"AND" AND test'
+
+    def test_quoted_apostrophe_replaced(self) -> None:
+        assert build_match_query('"l\'école"') == '"l école"'
+
 
 class TestFormatHhmmss:
     def test_zero(self) -> None:

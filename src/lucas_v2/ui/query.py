@@ -1,22 +1,71 @@
 from __future__ import annotations
 
 
+_OPS: frozenset[str] = frozenset({"OR", "AND", "NOT"})
+
+
+def _scan_quoted(i: int, raw: str) -> tuple[str, int]:
+    """Scanne une région entre guillemets.
+
+    Renvoie la phrase nettoyée (avec éventuellement le ``*`` de préfixe) et
+    l'index du prochain caractère à examiner.
+    """
+    content: list[str] = []
+    j = i + 1
+    while j < len(raw) and raw[j] != '"':
+        content.append(raw[j])
+        j += 1
+    quoted = " ".join("".join(content).replace("'", " ").split())
+    if j < len(raw) and raw[j + 1 : j + 2] == "*":
+        return f'"{quoted}"*', j + 2
+    return f'"{quoted}"', j + 1
+
+
+def _tokenize(raw: str) -> list[str]:
+    """Découpe l'entrée en tokens bruts en préservant les phrases entre guillemets.
+
+    ``'"sécurité sociale" OR école*'`` → ``['"sécurité sociale"', 'OR', 'école*']``.
+    Un ``*`` directement après le guillemet fermant est absorbé dans le token
+    (préfixe de phrase : ``"transition écolo"*``).
+    Une apostrophe est remplacée par un espace (comportement existant).
+    """
+    tokens: list[str] = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        if raw[i].isspace():
+            i += 1
+            continue
+        if raw[i] == '"':
+            token, i = _scan_quoted(i, raw)
+            tokens.append(token)
+            continue
+        j = i
+        while j < n and not raw[j].isspace():
+            j += 1
+        tokens.append(raw[i:j])
+        i = j
+    return tokens
+
+
 def build_match_query(raw: str) -> str:
     """Build FTS5 match query from user input.
 
     Supports explicit ``OR``, ``AND``, ``NOT`` operators (case-insensitive),
-    parentheses, and implicit ``AND`` between adjacent terms.
-    Apostrophes in terms are escaped for FTS5 (``'`` → ``''``).
+    parentheses, implicit ``AND``, and quoted phrases (optionally with a
+    trailing ``*`` phrase prefix).
+    Apostrophes in terms are turned into spaces.
     Raises ``ValueError`` when input is empty after processing.
     """
-    _OPS: frozenset[str] = frozenset({"OR", "AND", "NOT"})
-
-    tokens = raw.split()
+    tokens = _tokenize(raw)
     if not tokens:
         raise ValueError("Requête vide")
 
     classified: list[tuple[str, str]] = []
     for t in tokens:
+        if t.startswith('"'):
+            classified.append(("TERM", t))
+            continue
         upper = t.upper()
         if upper in _OPS:
             classified.append(("OP", upper))

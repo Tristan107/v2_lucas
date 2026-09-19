@@ -21,6 +21,7 @@ from lucas_v2.ui.db_search import (
     search_video_chunks,
     search_videos,
 )
+from lucas_v2.ui.presets import PRESETS
 from lucas_v2.ui.query import build_match_query, format_date_fr, format_hhmmss, youtube_url
 
 VIDEOS_PER_PAGE = 10
@@ -119,6 +120,22 @@ def _inject_compact_style() -> None:
                 color: #666;
                 text-align: left;
                 line-height: 1.2;
+            }
+
+            /* Tous les boutons en gras (même poids que les noms de candidats) */
+            div[data-testid="stButton"] button,
+            div[data-testid="stLinkButton"] a {
+                font-weight: 600 !important;
+            }
+
+            /* Espace entre la rangée de pills et la barre de recherche */
+            div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:nth-child(2) {
+                margin-bottom: 0.75rem !important;
+            }
+
+            /* Espace entre la barre de recherche et la ligne « Répartition par orientation / candidat » */
+            div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:nth-child(4) {
+                margin-top: 0.75rem !important;
             }
         </style>
         """
@@ -370,6 +387,27 @@ def _render_active_filters() -> None:
     )
 
 
+def _render_preset_row() -> None:
+    """Affiche les pills de recherche thématique au-dessus de la barre de recherche."""
+    current = st.session_state.get("last_match_query")
+    cols = st.columns(len(PRESETS))
+    for i, preset in enumerate(PRESETS):
+        with cols[i]:
+            match_query = build_match_query(preset.raw_query)
+            active = match_query == current
+            if st.button(
+                preset.label,
+                key=f"preset_{i}",
+                type="primary" if active else "secondary",
+                width="stretch",
+                help=preset.raw_query,
+            ):
+                st.session_state["search_input"] = preset.raw_query
+                st.session_state["video_page"] = 0
+                st.session_state["chunk_page"] = 0
+                st.session_state["owner_filter"] = None
+
+
 def _render_video_list(conn: Any, match_query: str) -> None:
     col_orient, col_channel = st.columns(2)
     with col_orient:
@@ -465,6 +503,7 @@ def render_youtube_page() -> None:
             _render_video_detail(conn, match_query, str(selected))
         return
 
+    _render_preset_row()
     col_search, col_btn = st.columns([5, 1])
     with col_search:
         raw_query = st.text_input(

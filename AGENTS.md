@@ -176,6 +176,7 @@ Le lien `video_link` produit une URL directe vers le début du chunk
 | `src/lucas_v2/logging_config.py` | Logging setup |
 | `src/lucas_v2/ui/query.py` | FTS query builder, date/URL formatting |
 | `src/lucas_v2/ui/db_search.py` | Video/chunk search queries |
+| `src/lucas_v2/ui/presets.py` | Presets de recherche thématique (pillules au-dessus de la barre) |
 | `src/lucas_v2/ui/app.py` | Streamlit page rendering |
 | `streamlit_app.py` | Streamlit entry point, routing |
 
