@@ -406,9 +406,11 @@ def _render_preset_row() -> None:
                 help=preset.raw_query,
             ):
                 st.session_state["search_input"] = preset.raw_query
+                st.session_state["last_match_query"] = match_query
                 st.session_state["video_page"] = 0
                 st.session_state["chunk_page"] = 0
                 st.session_state["owner_filter"] = None
+                st.rerun()
 
 
 def _render_video_list(conn: Any, match_query: str) -> None:

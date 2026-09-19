@@ -1,6 +1,6 @@
 [project]
 name = "lucas-v2"
-version = "0.2.0"
+version = "0.2.1"
 description = "Add your description here"
 readme = "README.md"
 authors = [
@@ -33,6 +33,7 @@ dev = [
     "pytest-cov>=6.0",
     "mypy>=1.14",
     "pyright>=1.1.411",
+    "playwright>=1.63.0",
 ]
 
 [tool.pytest.ini_options]
