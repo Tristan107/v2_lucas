@@ -131,14 +131,12 @@ def _inject_compact_style() -> None:
                 font-weight: 600 !important;
             }
 
-            /* Espace entre la rangée de pills et la barre de recherche */
-            div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:nth-child(2) {
-                margin-bottom: 0.75rem !important;
-            }
-
-            /* Espace entre la barre de recherche et la ligne « Répartition par orientation / candidat » */
-            div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:nth-child(4) {
+            /* Espacement vertical symétrique autour de la barre de recherche */
+            /* (même espace en dessous qu'entre la barre et la rangée de pills au-dessus) */
+            div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"]:has(div[data-testid="stTextInput"]),
+            div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(div[data-testid="stTextInput"]) {
                 margin-top: 0.75rem !important;
+                margin-bottom: 0.75rem !important;
             }
         </style>
         """
