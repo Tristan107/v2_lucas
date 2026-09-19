@@ -456,6 +456,7 @@ def _render_chunk_row(ch: ChunkHit) -> None:
 def _render_video_detail(conn: Any, match_query: str, youtube_str_id: str) -> None:
     if st.button("← Retour à la liste", key="back_to_list"):
         st.session_state["selected_video_id"] = None
+        st.session_state["search_input"] = st.session_state.get("last_raw_query", "")
         st.rerun()
 
     v = get_video(conn, youtube_str_id)
@@ -530,6 +531,7 @@ def render_youtube_page() -> None:
         st.warning("Requête vide.")
         return
 
+    st.session_state["last_raw_query"] = raw_query
     _sync_search_state(match_query)
     conn = _get_conn()
     with st.spinner("Recherche en cours…"):
