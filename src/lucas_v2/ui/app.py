@@ -465,15 +465,13 @@ def render_youtube_page() -> None:
             _render_video_detail(conn, match_query, str(selected))
         return
 
-    previous_query = str(st.session_state.get("last_match_query", ""))
-
     col_search, col_btn = st.columns([5, 1])
     with col_search:
         raw_query = st.text_input(
             "Rechercher",
+            key="search_input",
             placeholder="immigr* OR travail*",
             label_visibility="collapsed",
-            value=previous_query,
         )
     with col_btn:
         search_clicked = st.button("Rechercher", width="stretch")
