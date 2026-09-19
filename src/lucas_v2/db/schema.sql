@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS transcript_chunk (
 
 CREATE INDEX IF NOT EXISTS idx_video_fk_channel ON video(fk_channel_id);
 CREATE INDEX IF NOT EXISTS idx_channel_ytid ON channel(channel_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_owner_unique ON channel(owner) WHERE owner IS NOT NULL;
 
 CREATE VIRTUAL TABLE IF NOT EXISTS transcript_chunk_fts USING fts5(
   text,

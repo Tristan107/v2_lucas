@@ -10,11 +10,13 @@ import streamlit as st
 
 from lucas_v2.db.connection import connect
 from lucas_v2.ui.db_search import (
+    ChannelStats,
     ChunkHit,
     VideoHit,
     count_video_chunks,
     count_videos,
     get_video,
+    search_chunks_by_channel,
     search_chunks_by_orientation,
     search_video_chunks,
     search_videos,
@@ -115,6 +117,7 @@ def _sync_search_state(match_query: str) -> None:
         st.session_state["video_page"] = 0
         st.session_state["selected_video_id"] = None
         st.session_state["chunk_page"] = 0
+        st.session_state["owner_filter"] = None
 
 
 def _video_meta_line(v: VideoHit) -> str:
@@ -245,13 +248,106 @@ def _render_orientation_breakdown(conn: Any, match_query: str) -> None:
     )
 
 
+def _render_channel_breakdown(conn: Any, match_query: str) -> None:
+    stats = search_chunks_by_channel(conn, match_query)
+    stats = [s for s in stats if s.total > 0 and s.owner is not None]
+    if not stats:
+        return
+
+    rows_html = ""
+    for s in stats:
+        color = _orientation_color(s.orientation)
+        pct = s.matched / s.total * 100
+        bar_width = min(pct, 100)
+        label = s.owner or "inconnu"
+        rows_html += (
+            f'<div style="margin-bottom:6px">'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">'
+            f'<span style="font-size:0.85rem;color:{color};font-weight:600">{html.escape(label)}</span>'
+            f'<span style="font-size:0.78rem;color:#888">{s.matched}/{s.total} <b style="color:{color}">{pct:.1f}%</b></span>'
+            f'</div>'
+            f'<div style="background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden">'
+            f'<div style="background:{color};height:100%;width:{bar_width:.1f}%;border-radius:4px"></div>'
+            f'</div>'
+            f'</div>'
+        )
+
+    st.html(
+        f'<div style="margin-bottom:0.75rem">'
+        f'<div style="font-size:0.85rem;font-weight:600;color:#444;margin-bottom:6px">Répartition par candidat</div>'
+        f'{rows_html}'
+        f'</div>'
+    )
+
+    seen_owners: set[str] = set()
+    unique_stats: list[ChannelStats] = []
+    for s in stats:
+        if s.owner and s.owner not in seen_owners:
+            seen_owners.add(s.owner)
+            unique_stats.append(s)
+    options = ["Toutes"] + [s.owner for s in unique_stats]
+
+    owner_orientation: dict[str, str | None] = {}
+    for s in stats:
+        if s.owner and s.owner not in owner_orientation:
+            owner_orientation[s.owner] = s.orientation
+    st.session_state["owner_orientation"] = owner_orientation
+
+    current = st.session_state.get("owner_filter")
+    index = 0 if current is None else options.index(current) if current in options else 0
+    selected = st.selectbox(
+        "Filtrer par candidat",
+        options,
+        index=index,
+        key="owner_selectbox",
+        accept_new_options=False,
+        filter_mode=None,
+    )
+    if selected == "Toutes":
+        st.session_state["owner_filter"] = None
+    else:
+        st.session_state["owner_filter"] = selected
+
+
+def _render_active_filters() -> None:
+    owner_filter = st.session_state.get("owner_filter")
+    if not owner_filter:
+        return
+
+    owner_orientation = st.session_state.get("owner_orientation", {})
+    orientation = owner_orientation.get(owner_filter)
+    color = _orientation_color(orientation)
+
+    chips_html = (
+        f'<span style="display:inline-flex;align-items:center;gap:4px;'
+        f'background:{color}15;color:{color};border-radius:16px;padding:2px 10px;'
+        f'font-size:0.82rem;font-weight:500">'
+        f'Candidat: {html.escape(owner_filter)}'
+        f'</span>'
+    )
+
+    st.html(
+        f'<div style="margin-bottom:0.5rem;display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+        f'{chips_html}'
+        f'</div>'
+    )
+
+
 def _render_video_list(conn: Any, match_query: str) -> None:
-    total = count_videos(conn, match_query)
+    col_orient, col_channel = st.columns(2)
+    with col_orient:
+        _render_orientation_breakdown(conn, match_query)
+    with col_channel:
+        _render_channel_breakdown(conn, match_query)
+
+    owner_filter = st.session_state.get("owner_filter")
+
+    total = count_videos(conn, match_query, owner_filter=owner_filter)
     if total == 0:
         st.info("Aucun résultat trouvé.")
         return
 
-    _render_orientation_breakdown(conn, match_query)
+    _render_active_filters()
 
     total_pages = max(1, math.ceil(total / VIDEOS_PER_PAGE))
     page = int(st.session_state.get("video_page", 0))
@@ -259,7 +355,13 @@ def _render_video_list(conn: Any, match_query: str) -> None:
     st.session_state["video_page"] = page
 
     st.caption(f"{total} vidéos trouvées — Page {page + 1} sur {total_pages}")
-    videos = search_videos(conn, match_query, limit=VIDEOS_PER_PAGE, offset=page * VIDEOS_PER_PAGE)
+    videos = search_videos(
+        conn,
+        match_query,
+        limit=VIDEOS_PER_PAGE,
+        offset=page * VIDEOS_PER_PAGE,
+        owner_filter=owner_filter,
+    )
     for v in videos:
         _render_video_row(v)
     _render_prev_next("video_page", page, total_pages)

@@ -48,12 +48,34 @@ class OrientationStats:
     total: int
 
 
-def search_videos(conn: Any, match_query: str, limit: int = 10, offset: int = 0) -> list[VideoHit]:
+@dataclass(frozen=True, slots=True)
+class ChannelStats:
+    owner: str | None
+    orientation: str | None
+    matched: int
+    total: int
+
+
+def search_videos(
+    conn: Any,
+    match_query: str,
+    limit: int = 10,
+    offset: int = 0,
+    owner_filter: str | None = None,
+) -> list[VideoHit]:
     """Return distinct videos whose chunks match *match_query*.
 
     Ordered by upload date descending, then mention count descending,
     then video id descending as a stable tiebreaker.
     """
+    where_clauses = ["transcript_chunk_fts MATCH ?"]
+    params: list[Any] = [match_query]
+    if owner_filter is not None:
+        where_clauses.append("c.owner = ?")
+        params.append(owner_filter)
+    where_sql = " AND ".join(where_clauses)
+    params.extend([limit, offset])
+
     try:
         rows = conn.execute(
             "SELECT v.youtube_str_id, v.title, v.upload_date, c.owner, c.orientation, "
@@ -62,11 +84,11 @@ def search_videos(conn: Any, match_query: str, limit: int = 10, offset: int = 0)
             "JOIN transcript_chunk tc ON tc.id = f.rowid "
             "JOIN video v ON v.id = tc.fk_video_id "
             "LEFT JOIN channel c ON c.id = v.fk_channel_id "
-            "WHERE transcript_chunk_fts MATCH ? "
+            f"WHERE {where_sql} "
             "GROUP BY v.id "
             "ORDER BY v.upload_date DESC, COUNT(*) DESC, v.id DESC "
             "LIMIT ? OFFSET ?",
-            (match_query, limit, offset),
+            tuple(params),
         ).fetchall()
     except ValueError as e:
         _log_fts_error(match_query, e)
@@ -120,8 +142,19 @@ def search_video_chunks(
     ]
 
 
-def count_videos(conn: Any, match_query: str) -> int:
+def count_videos(
+    conn: Any,
+    match_query: str,
+    owner_filter: str | None = None,
+) -> int:
     """Count distinct videos whose chunks match *match_query*."""
+    where_clauses = ["transcript_chunk_fts MATCH ?"]
+    params: list[Any] = [match_query]
+    if owner_filter is not None:
+        where_clauses.append("c.owner = ?")
+        params.append(owner_filter)
+    where_sql = " AND ".join(where_clauses)
+
     try:
         row = conn.execute(
             "SELECT COUNT(*) FROM ("
@@ -129,9 +162,10 @@ def count_videos(conn: Any, match_query: str) -> int:
             "FROM transcript_chunk_fts f "
             "JOIN transcript_chunk tc ON tc.id = f.rowid "
             "JOIN video v ON v.id = tc.fk_video_id "
-            "WHERE transcript_chunk_fts MATCH ? "
+            "LEFT JOIN channel c ON c.id = v.fk_channel_id "
+            f"WHERE {where_sql} "
             "GROUP BY v.id)",
-            (match_query,),
+            tuple(params),
         ).fetchone()
     except ValueError as e:
         _log_fts_error(match_query, e)
@@ -218,6 +252,57 @@ def search_chunks_by_orientation(conn: Any, match_query: str) -> list[Orientatio
         total = totals.get(orient, 0)
         if total > 0:
             stats.append(OrientationStats(orientation=orient, matched=matched, total=total))
+
+    stats.sort(key=lambda s: s.matched / s.total, reverse=True)
+    return stats
+
+
+def search_chunks_by_channel(conn: Any, match_query: str) -> list[ChannelStats]:
+    """Return per-channel chunk counts: matched (FTS) vs total (all chunks in DB).
+
+    Results are sorted by ratio descending (highest proportion first).
+    Channels with total == 0 are excluded. NULL titles are grouped under "non classé".
+    """
+    try:
+        matched_rows = conn.execute(
+            "SELECT v.fk_channel_id, c.owner, c.orientation, COUNT(*) AS matched "
+            "FROM transcript_chunk_fts f "
+            "JOIN transcript_chunk tc ON tc.id = f.rowid "
+            "JOIN video v ON v.id = tc.fk_video_id "
+            "LEFT JOIN channel c ON c.id = v.fk_channel_id "
+            "WHERE transcript_chunk_fts MATCH ? "
+            "GROUP BY v.fk_channel_id",
+            (match_query,),
+        ).fetchall()
+    except ValueError as e:
+        _log_fts_error(match_query, e)
+        return []
+
+    total_rows = conn.execute(
+        "SELECT v.fk_channel_id, COUNT(tc.id) AS total "
+        "FROM transcript_chunk tc "
+        "JOIN video v ON v.id = tc.fk_video_id "
+        "GROUP BY v.fk_channel_id",
+    ).fetchall()
+
+    totals: dict[int | None, int] = {r[0]: int(r[1]) for r in total_rows}
+
+    stats: list[ChannelStats] = []
+    for r in matched_rows:
+        ch_id = r[0]
+        owner = r[1]
+        orient = r[2]
+        matched = int(r[3])
+        total = totals.get(ch_id, 0)
+        if total > 0:
+            stats.append(
+                ChannelStats(
+                    owner=owner,
+                    orientation=orient,
+                    matched=matched,
+                    total=total,
+                )
+            )
 
     stats.sort(key=lambda s: s.matched / s.total, reverse=True)
     return stats
