@@ -354,7 +354,7 @@ def _render_video_list(conn: Any, match_query: str) -> None:
     page = max(0, min(page, total_pages - 1))
     st.session_state["video_page"] = page
 
-    st.caption(f"{total} vidéos trouvées — Page {page + 1} sur {total_pages}")
+    st.caption(f"{total} vidéos trouvées — Triées par nombre de mentions — Page {page + 1} sur {total_pages}")
     videos = search_videos(
         conn,
         match_query,

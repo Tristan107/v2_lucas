@@ -65,7 +65,7 @@ def search_videos(
 ) -> list[VideoHit]:
     """Return distinct videos whose chunks match *match_query*.
 
-    Ordered by upload date descending, then mention count descending,
+    Ordered by mention count descending, then upload date descending,
     then video id descending as a stable tiebreaker.
     """
     where_clauses = ["transcript_chunk_fts MATCH ?"]
@@ -86,7 +86,7 @@ def search_videos(
             "LEFT JOIN channel c ON c.id = v.fk_channel_id "
             f"WHERE {where_sql} "
             "GROUP BY v.id "
-            "ORDER BY v.upload_date DESC, COUNT(*) DESC, v.id DESC "
+            "ORDER BY COUNT(*) DESC, v.upload_date DESC, v.id DESC "
             "LIMIT ? OFFSET ?",
             tuple(params),
         ).fetchall()
