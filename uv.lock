@@ -1082,7 +1082,7 @@ wheels = [
 
 [[package]]
 name = "lucas-v2"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
