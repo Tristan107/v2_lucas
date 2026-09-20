@@ -35,6 +35,11 @@ htmlcov/
 .env.local
 *.pem
 
+# YouTube cookies (compte secondaire, jamais commité)
+cookies.txt
+*.cookies.txt
+.youtube-cookies/
+
 # Operating System & IDEs
 .DS_Store
 .vscode/
@@ -48,3 +53,4 @@ sonar_issues.json
 # Logs
 logs/
 .playwright-mcp/
+www.youtube.com_cookies.txt

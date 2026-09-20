@@ -15,8 +15,11 @@ from lucas_v2.ingest.subs import (
     base_opts,
     choose_track,
     check_abort,
+    do_download,
     extract_meta,
+    get_cookie_file,
     is_retryable,
+    pick_srt_file,
     record_429,
     reset_rate_limit,
     run_with_retry,
@@ -139,6 +142,64 @@ class TestBaseOpts:
         assert opts["retry_sleep"] == {"extractor": 30}
         assert "/tmp/test" in opts["outtmpl"]
 
+    def test_no_cookiefile_by_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("YOUTUBE_COOKIES_FILE", raising=False)
+        opts = base_opts("/tmp/test")
+        assert "cookiefile" not in opts
+
+    def test_cookiefile_when_valid(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        cf = tmp_path / "cookies.txt"
+        cf.write_text("# Netscape\n", encoding="utf-8")
+        monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(cf))
+        opts = base_opts("/tmp/test")
+        assert opts["cookiefile"] == str(cf)
+
+    def test_cookiefile_missing_path_warns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("YOUTUBE_COOKIES_FILE", "/tmp/cookies-inexistant-xyz.txt")
+        opts = base_opts("/tmp/test")
+        assert "cookiefile" not in opts
+
+
+class TestGetCookieFile:
+    def test_absent_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("YOUTUBE_COOKIES_FILE", raising=False)
+        assert get_cookie_file() is None
+
+    def test_valid_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+        cf = tmp_path / "cookies.txt"
+        cf.write_text("# Netscape\n", encoding="utf-8")
+        monkeypatch.setenv("YOUTUBE_COOKIES_FILE", str(cf))
+        assert get_cookie_file() == str(cf)
+
+
+class TestPickSrtFile:
+    def test_fr_priority(self, tmp_path: Any) -> None:
+        (tmp_path / "a.fr-orig.srt").write_text("orig", encoding="utf-8")
+        (tmp_path / "a.fr.srt").write_text("fr", encoding="utf-8")
+        result = pick_srt_file(str(tmp_path), "fr")
+        assert result is not None
+        assert result.name == "a.fr.srt"
+
+    def test_fr_orig(self, tmp_path: Any) -> None:
+        (tmp_path / "a.fr.srt").write_text("fr", encoding="utf-8")
+        (tmp_path / "a.fr-orig.srt").write_text("orig", encoding="utf-8")
+        result = pick_srt_file(str(tmp_path), "fr-orig")
+        assert result is not None
+        assert result.name == "a.fr-orig.srt"
+
+    def test_empty_dir(self, tmp_path: Any) -> None:
+        assert pick_srt_file(str(tmp_path), "fr") is None
+
+    def test_chosen_none(self, tmp_path: Any) -> None:
+        (tmp_path / "a.fr.srt").write_text("fr", encoding="utf-8")
+        assert pick_srt_file(str(tmp_path), None) is None
+
 
 class TestIsRetryable:
     def test_429is_retryable(self) -> None:
@@ -199,9 +260,11 @@ class TestRunWithRetry:
         mock_ydl = MagicMock()
         mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info.return_value = {"id": "vid123"}
         rate_state = RateLimitState()
-        run_with_retry({}, "https://example.com", rate_state)
+        info = run_with_retry({}, "https://example.com", rate_state)
         mock_ydl.extract_info.assert_called_once()
+        assert info == {"id": "vid123"}
         assert rate_state.consecutive_429 == 0
 
     @patch("lucas_v2.ingest.subs.time.sleep", return_value=None)
@@ -299,3 +362,78 @@ class TestRunWithRetry:
         rate_state = RateLimitState()
         run_with_retry({}, "https://example.com", rate_state)
         assert rate_state.consecutive_429 == 0
+
+    @patch("lucas_v2.ingest.subs.yt_dlp.YoutubeDL")
+    def test_success_returns_info(self, mock_ydl_cls: MagicMock) -> None:
+        mock_ydl = MagicMock()
+        mock_ydl_cls.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info.return_value = {"subtitles": {"fr": []}}
+        rate_state = RateLimitState()
+        info = run_with_retry({}, "https://example.com", rate_state)
+        assert info == {"subtitles": {"fr": []}}
+
+
+class TestDoDownloadSinglePass:
+    @patch("lucas_v2.ingest.subs.run_with_retry")
+    def test_single_extract_info_call(
+        self, mock_run: MagicMock, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("YOUTUBE_COOKIES_FILE", raising=False)
+        (tmp_path / "vid.fr.srt").write_text("bonjour", encoding="utf-8")
+        mock_run.return_value = {
+            "title": "T",
+            "subtitles": {"fr": [{}]},
+            "automatic_captions": {},
+        }
+        rate_state = RateLimitState()
+        srt, lang, kind, meta = do_download("https://example.com", str(tmp_path), rate_state)
+        assert mock_run.call_count == 1
+        opts = mock_run.call_args[0][0]
+        assert opts["subtitleslangs"] == ["fr", "fr-orig"]
+        assert opts["writeautomaticsub"] is True
+        assert (srt, lang, kind) == ("bonjour", "fr", "manual")
+        assert meta["title"] == "T"
+
+    @patch("lucas_v2.ingest.subs.run_with_retry")
+    def test_no_french_returns_no_subs(
+        self, mock_run: MagicMock, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("YOUTUBE_COOKIES_FILE", raising=False)
+        mock_run.return_value = {
+            "title": "T",
+            "subtitles": {},
+            "automatic_captions": {},
+        }
+        rate_state = RateLimitState()
+        srt, lang, kind, meta = do_download("https://example.com", str(tmp_path), rate_state)
+        assert (srt, lang, kind) == (None, None, None)
+        assert mock_run.call_count == 1
+        assert meta["title"] == "T"
+
+    @patch("lucas_v2.ingest.subs.run_with_retry")
+    def test_info_none_returns_empty(
+        self, mock_run: MagicMock, tmp_path: Any
+    ) -> None:
+        mock_run.return_value = None
+        rate_state = RateLimitState()
+        assert do_download("https://example.com", str(tmp_path), rate_state) == (
+            None,
+            None,
+            None,
+            {},
+        )
+
+    @patch("lucas_v2.ingest.subs.run_with_retry")
+    def test_no_srt_file_returns_no_subs(
+        self, mock_run: MagicMock, tmp_path: Any
+    ) -> None:
+        mock_run.return_value = {
+            "title": "T",
+            "subtitles": {"fr": [{}]},
+            "automatic_captions": {},
+        }
+        rate_state = RateLimitState()
+        srt, lang, kind, meta = do_download("https://example.com", str(tmp_path), rate_state)
+        assert (srt, lang, kind) == (None, None, None)
+        assert meta["title"] == "T"

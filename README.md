@@ -39,7 +39,27 @@ cp channels.yaml.example channels.yaml   # puis lister vos chaînes
 TURSO_DATABASE_URL=libsql://...
 TURSO_AUTH_TOKEN=...
 YOUTUBE_API_KEY=...
+# Optionnel : cookies YouTube (compte secondaire) contre les 429 yt-dlp
+YOUTUBE_COOKIES_FILE=/home/tristan/.config/lucas/cookies.txt
 ```
+
+### Cookies YouTube (anti-429, optionnel)
+
+Sans cookies, l'ingestion fonctionne en mode anonyme. En cas de 429
+répétés, configurer un fichier cookies depuis un **compte secondaire**
+(jamais le compte principal) :
+
+1. Installer l'extension « Get cookies.txt LOCALLY » dans le navigateur
+2. Se connecter à YouTube avec le compte secondaire
+3. Exporter les cookies de `youtube.com` au format Netscape
+4. Sauvegarder le fichier hors repo, ex. `~/.config/lucas/cookies.txt`
+5. Protéger : `chmod 600 ~/.config/lucas/cookies.txt`
+6. Renseigner `YOUTUBE_COOKIES_FILE` dans `.env` (voir ci-dessus)
+
+Si la variable est absente ou pointe vers un fichier inexistant,
+l'ingestion continue en mode anonyme avec un warning. Si les 429
+persistent malgré des cookies configurés, ils ont probablement expiré :
+ré-exporter le fichier.
 
 `channels.yaml` :
 

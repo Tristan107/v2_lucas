@@ -16,7 +16,21 @@ from yt_dlp.utils import DownloadError  # pyright: ignore[reportMissingModuleSou
 
 logger: logging.Logger = logging.getLogger("lucas_v2.subs")
 
+COOKIE_ENV_VAR: str = "YOUTUBE_COOKIES_FILE"
+
 MAX_CONSECUTIVE_429: int = 6
+
+
+def get_cookie_file() -> str | None:
+    """Lit YOUTUBE_COOKIES_FILE, retourne le chemin si fichier valide, sinon None."""
+    p: str = os.environ.get(COOKIE_ENV_VAR, "").strip()
+    if not p:
+        return None
+    if not os.path.isfile(p):
+        logger.warning("Fichier cookies introuvable (%s) : mode anonyme.", p)
+        return None
+    logger.info("Cookies YouTube chargés depuis %s.", p)
+    return p
 
 
 class RateLimitedError(Exception):
@@ -73,11 +87,13 @@ def download_srt(
     """Download SRT subtitles for a video.
 
     Stratégie anti-429 :
-    1. Pré-vol sans téléchargement : liste les pistes dispo, choisit LA meilleure
+    1. Passe unique : un seul extract_info(download=True) qui récupère
+       info + sous-titres fr/fr-orig, puis tri post-download
        (fr manuel > fr-orig manuel > fr auto > fr-orig auto).
-    2. Télécharge uniquement cette piste (1 seul hit timedtext).
-    3. Sur 429 : 3 tentatives, sleeps 60/120 + Retry-After, lève RateLimitedError
+    2. Sur 429 : 3 tentatives, sleeps 60/120 + Retry-After, lève RateLimitedError
        (l'ingest skipe sans insérer → retry naturel au prochain run).
+    3. Cookies optionnels via YOUTUBE_COOKIES_FILE (compte secondaire) :
+       si absent/invalide, mode anonyme avec warning.
 
     Returns (srt_text, sub_lang, sub_kind, meta).
     Returns (None, None, None, meta) si pas de FR (définitif, 0 hit timedtext).
@@ -91,7 +107,7 @@ def download_srt(
 
 
 def base_opts(tmpdir: str) -> dict[str, Any]:
-    return {
+    opts: dict[str, Any] = {
         "skip_download": True,
         "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
         "quiet": True,
@@ -104,6 +120,34 @@ def base_opts(tmpdir: str) -> dict[str, Any]:
         "fragment_retries": 2,
         "retry_sleep": {"extractor": 30},
     }
+    cf: str | None = get_cookie_file()
+    if cf is not None:
+        opts["cookiefile"] = cf
+    return opts
+
+
+def pick_srt_file(tmpdir: str, chosen: str | None) -> Path | None:
+    """Choisit le fichier .srt correspondant à la piste choisie."""
+    files: list[Path] = sorted(Path(tmpdir).glob("*.srt"))
+    if not files or chosen is None:
+        return None
+    if chosen == "fr":
+        for f in files:
+            if f.name.endswith(".fr.srt"):
+                return f
+        for f in files:
+            if ".fr" in f.name and "fr-orig" not in f.name:
+                return f
+        return None
+    if chosen == "fr-orig":
+        for f in files:
+            if f.name.endswith(".fr-orig.srt"):
+                return f
+        for f in files:
+            if "fr-orig" in f.name:
+                return f
+        return None
+    return None
 
 
 def extract_meta(info: dict[str, Any]) -> dict[str, Any]:
@@ -121,15 +165,24 @@ def do_download(
     tmpdir: str,
     rate_state: RateLimitState,
 ) -> tuple[str | None, str | None, str | None, dict[str, Any]]:
+    # Passe unique : 1 seul extract_info(download=True) qui télécharge
+    # les sous-titres fr + fr-orig ; tri post-download via choose_track().
+    ydl_opts: dict[str, Any] = {
+        **base_opts(tmpdir),
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["fr", "fr-orig"],
+        "subtitlesformat": "srt/best",
+        "convertsubtitles": "srt",
+    }
     try:
-        with yt_dlp.YoutubeDL(base_opts(tmpdir)) as ydl:  # pyright: ignore[reportArgumentType]
-            info = ydl.extract_info(video_url, download=False)  # pyright: ignore[reportAssignmentType]
+        info = run_with_retry(ydl_opts, video_url, rate_state)
     except DownloadError as e:
         if is_retryable(e):
             record_429(rate_state)
             check_abort(rate_state, video_url)
             raise RateLimitedError(
-                f"429 pré-vol sur {video_url} : vidéo skippée."
+                f"429 sur {video_url} : vidéo skippée."
             ) from e
         raise
 
@@ -147,22 +200,11 @@ def do_download(
     if chosen is None:
         return None, None, None, meta
 
-    ydl_opts: dict[str, Any] = {
-        **base_opts(tmpdir),
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-        "subtitleslangs": [chosen],
-        "subtitlesformat": "srt/best",
-        "convertsubtitles": "srt",
-    }
-
-    run_with_retry(ydl_opts, video_url, rate_state)
-
-    srt_files: list[Path] = sorted(Path(tmpdir).glob("*.srt"))
-    if not srt_files:
+    srt_file: Path | None = pick_srt_file(tmpdir, chosen)
+    if srt_file is None:
         return None, None, None, meta
 
-    srt_text: str = srt_files[0].read_text(encoding="utf-8")
+    srt_text: str = srt_file.read_text(encoding="utf-8")
     return srt_text, chosen, sub_kind, meta
 
 
@@ -170,13 +212,13 @@ def run_with_retry(
     ydl_opts: dict[str, Any],
     video_url: str,
     rate_state: RateLimitState,
-) -> None:
+) -> dict[str, Any] | None:
     for attempt in range(len(RETRY_DELAYS_S)):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # pyright: ignore[reportArgumentType]
-                ydl.extract_info(video_url, download=True)
+                info = ydl.extract_info(video_url, download=True)
             reset_rate_limit(rate_state)
-            return
+            return info  # pyright: ignore[reportReturnType]
         except DownloadError as e:
             if not is_retryable(e):
                 raise
@@ -186,7 +228,8 @@ def run_with_retry(
                 time.sleep(backoff_delay(attempt, e))
     raise RateLimitedError(
         f"Rate-limit YouTube persistant sur {video_url} : "
-        "vidéo skippée, sera reprise au prochain run."
+        "vidéo skippée, sera reprise au prochain run. "
+        "Si cookies configurés, vérifier leur validité (ré-exporter)."
     )
 
 
